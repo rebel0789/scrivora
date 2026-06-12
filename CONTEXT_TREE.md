@@ -2,9 +2,11 @@
 
 Last updated: 2026-06-12
 
-Public product name: Scrivora. Repo path remains `/Users/rebel/Documents/wishperflow`. Swift targets/modules remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` for V0.2.
+Public product name: Scrivora. Repo path remains `/Users/rebel/Documents/wishperflow`. Swift targets/modules remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` for V0.3.
 
-Current V0.2 default: Parakeet V2 English, Fast deterministic cleanup, Hold Control trigger. Fallbacks preserved: persistent `whisper-server`, `whisper-cli`, and batch Parakeet V2/V3. Partial overlay is pseudo-streaming through throttled rolling-window Parakeet batch calls; true FluidAudio streaming/EOU is not yet implemented.
+Current V0.3 default: Maximum Privacy, Parakeet V2 English, Fast deterministic cleanup, Hold Control trigger. Fallbacks preserved: persistent `whisper-server`, `whisper-cli`, and batch Parakeet V2/V3. Partial overlay is pseudo-streaming through throttled rolling-window Parakeet batch calls; true FluidAudio streaming/EOU is not yet implemented.
+
+V0.3 adds first-run privacy choice, redacted debug export, Offline Mode download blocking, dev signing cleanup, and privacy/security documentation.
 
 Purpose: keep product, architecture, ASR, UX, and competitor research in one map so future implementation does not drift into random features before the core dictation loop is excellent.
 
@@ -69,7 +71,9 @@ Do not expand into command workflows, sync, meetings, or cloud enhancement until
 - FluidAudio Parakeet V3/V2 batch backend that keeps the model loaded in-process and transcribes in-memory samples.
 - Deterministic cleanup for punctuation commands, artifacts, replacements, and basic formatting.
 - Clipboard-first paste fallback that leaves the final transcript on the clipboard.
-- Local JSON settings and history.
+- Local JSON settings, history, correction memory, and performance logs.
+- Maximum Privacy is the fresh-install default; history and learning memory are off until the user chooses local memory.
+- Privacy export supports full local export and redacted debug export.
 - Local model catalog and downloader for whisper.cpp GGML files.
 - Latency metrics surfaced in DebugPerformanceView.
 

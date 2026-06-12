@@ -8,3 +8,13 @@ __pycache__/
 *.pyc
 *.xcuserstate
 *.DS_Store
+*.p12
+*.cer
+*.key
+*.pem
+*.mobileprovision
+*.keychain
+*.keychain-db
+signing-password*
+Signing/
+.build/dev-signing/

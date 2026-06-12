@@ -8,6 +8,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
     public var cleanupToPaste: TimeInterval?
     public var stopSpeakingToInsertedText: TimeInterval?
     public var firstPartialLatency: TimeInterval?
+    public var firstPartialRequestLatency: TimeInterval?
+    public var firstPartialASRDuration: TimeInterval?
     public var pasteMethod: String?
     public var modelLoadTime: TimeInterval?
     public var modelWarmupTime: TimeInterval?
@@ -20,6 +22,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         cleanupToPaste: TimeInterval? = nil,
         stopSpeakingToInsertedText: TimeInterval? = nil,
         firstPartialLatency: TimeInterval? = nil,
+        firstPartialRequestLatency: TimeInterval? = nil,
+        firstPartialASRDuration: TimeInterval? = nil,
         pasteMethod: String? = nil,
         modelLoadTime: TimeInterval? = nil,
         modelWarmupTime: TimeInterval? = nil
@@ -31,6 +35,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         self.cleanupToPaste = cleanupToPaste
         self.stopSpeakingToInsertedText = stopSpeakingToInsertedText
         self.firstPartialLatency = firstPartialLatency
+        self.firstPartialRequestLatency = firstPartialRequestLatency
+        self.firstPartialASRDuration = firstPartialASRDuration
         self.pasteMethod = pasteMethod
         self.modelLoadTime = modelLoadTime
         self.modelWarmupTime = modelWarmupTime
@@ -74,6 +80,18 @@ public actor PerformanceLogger {
     public func setFirstPartialLatency(_ value: TimeInterval) {
         if current.firstPartialLatency == nil {
             current.firstPartialLatency = value
+        }
+    }
+
+    public func setFirstPartialRequestLatency(_ value: TimeInterval) {
+        if current.firstPartialRequestLatency == nil {
+            current.firstPartialRequestLatency = value
+        }
+    }
+
+    public func setFirstPartialASRDuration(_ value: TimeInterval) {
+        if current.firstPartialASRDuration == nil {
+            current.firstPartialASRDuration = value
         }
     }
 

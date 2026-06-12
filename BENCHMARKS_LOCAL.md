@@ -11,6 +11,8 @@ These benchmarks use local-only audio. No audio was uploaded. The quick syntheti
 - Compatible fallback: persistent `whisper-server`.
 - Emergency fallback: `whisper-cli`.
 
+V0.3 did not change the ASR recommendation. It added privacy defaults, export, Offline Mode download blocking, and signing cleanup around the existing local ASR paths.
+
 Parakeet V2 is still the preferred default because the user reported it is much more accurate on their real voice than the earlier whisper.cpp path. The synthetic sample below slightly favors whisper/V3 for the word `Scrivora`, so a real voice benchmark set is still required before production claims.
 
 ## Synthetic Smoke Benchmark
@@ -59,4 +61,3 @@ Scripts/benchmark_asr.py \
 Repeat with `--fluidaudio-model-version v3`.
 
 Do not commit personal voice recordings.
-

@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_SUPPORT="$HOME/Library/Application Support/LocalVoiceFlow/Signing"
-KEYCHAIN="$APP_SUPPORT/LocalVoiceFlowSigning.keychain-db"
-PASSWORD_FILE="$APP_SUPPORT/keychain-password.txt"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SIGNING_DIR="${LOCALVOICEFLOW_DEV_SIGNING_DIR:-$ROOT/.build/dev-signing}"
+KEYCHAIN="$SIGNING_DIR/LocalVoiceFlowSigning.keychain-db"
+PASSWORD_FILE="$SIGNING_DIR/keychain-password.txt"
 IDENTITY_NAME="${LOCALVOICEFLOW_CODESIGN_IDENTITY:-LocalVoiceFlow Development}"
-CERT_PEM="$APP_SUPPORT/LocalVoiceFlowDevelopment.cer"
-KEY_PEM="$APP_SUPPORT/LocalVoiceFlowDevelopment.key"
-P12_FILE="$APP_SUPPORT/LocalVoiceFlowDevelopment.p12"
-OPENSSL_CONFIG="$APP_SUPPORT/openssl.cnf"
+CERT_PEM="$SIGNING_DIR/LocalVoiceFlowDevelopment.cer"
+KEY_PEM="$SIGNING_DIR/LocalVoiceFlowDevelopment.key"
+P12_FILE="$SIGNING_DIR/LocalVoiceFlowDevelopment.p12"
+OPENSSL_CONFIG="$SIGNING_DIR/openssl.cnf"
 
-mkdir -p "$APP_SUPPORT"
-chmod 700 "$APP_SUPPORT"
+mkdir -p "$SIGNING_DIR"
+chmod 700 "$SIGNING_DIR"
 
 if [[ ! -f "$PASSWORD_FILE" ]]; then
   printf '%s%s' "$(uuidgen | tr -d '-')" "$(uuidgen | tr -d '-')" | cut -c 1-32 >"$PASSWORD_FILE"

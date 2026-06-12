@@ -7,7 +7,7 @@ Scrivora is split into a pure Swift core library and a macOS SwiftUI app target.
 - `LocalVoiceFlowCore`: pipeline logic, model metadata, settings/history stores, text cleanup, diagnostics, ASR/LLM protocols, and testable algorithms.
 - `LocalVoiceFlowApp`: SwiftUI menu bar app, AppKit permission and insertion services, AVAudioEngine capture, global hotkey registration, and views.
 
-The public product name is Scrivora. Swift target and module names remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.2 to avoid a risky internal rename while preserving the working app.
+The public product name is Scrivora. Swift target and module names remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.3 to avoid a risky internal rename while preserving the working app and macOS permission continuity.
 
 This keeps model/runtime-specific code behind protocols and keeps most behavior testable with `swift test`.
 
@@ -41,7 +41,7 @@ Trigger mode
 - `isLoaded`
 - `modelInfo`
 
-V0.2 default is FluidAudio Parakeet V2 in-process batch ASR with pseudo-streaming partials. Persistent `whisper-server` remains compatible fallback and `whisper-cli` remains emergency fallback. True streaming/EOU should be implemented through FluidAudio streaming APIs when benchmarked and stable.
+V0.3 default is FluidAudio Parakeet V2 in-process batch ASR with pseudo-streaming partials. Persistent `whisper-server` remains compatible fallback and `whisper-cli` remains emergency fallback. True streaming/EOU should be implemented through FluidAudio streaming APIs when benchmarked and stable.
 
 ## LLM Boundary
 
@@ -53,16 +53,21 @@ Use local JSON files under:
 
 `~/Library/Application Support/LocalVoiceFlow`
 
-This storage path remains unchanged in V0.2 so existing settings, history, and downloaded whisper.cpp models are preserved during the public rename to Scrivora.
+This storage path remains unchanged in V0.3 so existing settings, history, and downloaded whisper.cpp models are preserved during the public rename to Scrivora.
 
 Subfolders:
 
 - `Models`
 - `History`
+- `Learning`
 - `Logs`
 - `Settings`
 
 No raw audio is stored by default. Temporary WAV files for command-line backend testing are written to the system temporary directory and deleted after transcription.
+
+Fresh installs default to Maximum Privacy: transcript history and learning memory off, target app metadata off, performance logs on, and audio saving off. Existing users are prompted to choose a privacy profile when migrated because older settings do not contain `firstRunPrivacyChoiceCompleted`.
+
+Structured export is implemented through `PrivacyExportService`. Redacted debug exports remove transcript text, correction text, target metadata, and local paths. Model files, audio, and signing material are not exported.
 
 ## Text Insertion
 

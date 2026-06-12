@@ -57,6 +57,8 @@ final class AppState: ObservableObject {
     @Published var voiceSpectrum: VoiceSpectrumBands = .silent
     @Published var storageUsageItems: [StorageUsageItem] = []
     @Published var storageStatusMessage: String?
+    @Published var privacyExportMessage: String?
+    @Published var storageMigrationStatus: DataStorageMigrationStatus?
 
     let fileStore: LocalFileStore
     let modelCatalog = ModelCatalog.default
@@ -105,6 +107,7 @@ final class AppState: ObservableObject {
         history = (try? historyStore.load()) ?? []
         correctionRecords = (try? correctionStore.load()) ?? []
         improvementStats = (try? correctionStore.stats()) ?? ImprovementStats()
+        storageMigrationStatus = DataStorageMigrationService().status(currentRootDirectory: fileStore.rootDirectory)
         refreshStorageUsage()
 
         refreshPermissions()
@@ -144,6 +147,10 @@ final class AppState: ObservableObject {
     var totalLocalStorageSize: String {
         let total = storageUsageItems.reduce(Int64(0)) { $0 + $1.byteCount }
         return ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+    }
+
+    var needsFirstRunPrivacyChoice: Bool {
+        !settings.privacy.firstRunPrivacyChoiceCompleted
     }
 
     func refreshPermissions() {
@@ -288,6 +295,11 @@ final class AppState: ObservableObject {
     }
 
     func downloadModel(_ model: ASRModelInfo) {
+        guard NetworkAccessPolicy.canDownloadRemoteModel(privacy: settings.privacy) else {
+            modelDownloadMessage = "Offline Mode is on. Scrivora will only use local models and local services. Remote model downloads are disabled."
+            return
+        }
+
         guard model.downloadURL != nil else {
             modelDownloadMessage = "No direct download is configured for \(model.displayName)."
             return
@@ -333,6 +345,12 @@ final class AppState: ObservableObject {
         saveSettings()
     }
 
+    func applyPrivacyChoice(_ profile: PrivacyProfile) {
+        settings.privacy = PrivacySettings.settings(for: profile)
+        saveSettings()
+        refreshStorageUsage()
+    }
+
     func clearHistory() {
         do {
             try historyStore.clear()
@@ -344,6 +362,11 @@ final class AppState: ObservableObject {
     }
 
     func learnCorrection(for record: HistoryRecord, correctedTranscript: String) {
+        guard settings.privacy.saveLearningMemory, !settings.privacy.privacyMode else {
+            learningMessage = "Learning memory is disabled by your privacy settings."
+            return
+        }
+
         let corrected = correctedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !corrected.isEmpty else {
             learningMessage = "Correction is empty."
@@ -419,7 +442,35 @@ final class AppState: ObservableObject {
         }
     }
 
+    func exportPrivacyData(options: PrivacyExportOptions) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Export Folder"
+        panel.prompt = "Export"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        do {
+            let result = try PrivacyExportService(
+                fileStore: fileStore,
+                fluidAudioDirectory: fluidAudioSupportDirectory()
+            ).export(
+                options: options,
+                to: destination,
+                settings: settings
+            )
+            privacyExportMessage = "Exported \(result.manifest.exportName) package to \(result.directory.path)."
+            NSWorkspace.shared.activateFileViewerSelecting([result.directory])
+        } catch {
+            privacyExportMessage = error.localizedDescription
+        }
+    }
+
     func refreshStorageUsage() {
+        storageMigrationStatus = DataStorageMigrationService().status(currentRootDirectory: fileStore.rootDirectory)
         let performanceLogURL = fileStore.logsDirectory.appendingPathComponent("dictation-performance.jsonl")
         let fluidAudioRoot = fluidAudioSupportDirectory()
         storageUsageItems = [
@@ -947,14 +998,20 @@ final class AppState: ObservableObject {
         guard partialTranscriptTask == nil else { return }
 
         let now = Date()
-        if let lastPartialRequestedAt, now.timeIntervalSince(lastPartialRequestedAt) < 0.8 {
+        let isFirstPartial = firstPartialTranscriptAt == nil
+        let minimumInterval = isFirstPartial ? 0.45 : 0.65
+        if let lastPartialRequestedAt, now.timeIntervalSince(lastPartialRequestedAt) < minimumInterval {
             return
         }
 
-        let windowSamples = ringBuffer.readLast(sampleCount: 16_000 * 6)
-        guard windowSamples.count >= 16_000 else { return }
+        let windowSamples = ringBuffer.readLast(sampleCount: isFirstPartial ? 16_000 * 3 : 16_000 * 5)
+        let minimumSampleCount = isFirstPartial ? Int(Double(16_000) * 0.75) : Int(Double(16_000) * 1.2)
+        guard windowSamples.count >= minimumSampleCount else { return }
 
         lastPartialRequestedAt = now
+        if isFirstPartial, let recordingStartedAt {
+            Task { await performanceLogger.setFirstPartialRequestLatency(now.timeIntervalSince(recordingStartedAt)) }
+        }
         let chunkID = partialSequenceNumber
         partialSequenceNumber += 1
         let recordingStartedAt = self.recordingStartedAt
@@ -965,9 +1022,11 @@ final class AppState: ObservableObject {
 
             do {
                 let engine = try await self.preparedEngine(for: model)
+                let partialASRWatch = Stopwatch()
                 let result = try await engine.transcribeFinal(
                     buffer: AudioBuffer(samples: windowSamples, sampleRate: 16_000)
                 )
+                let partialASRDuration = partialASRWatch.elapsedSeconds()
                 guard !Task.isCancelled else { return }
                 guard self.runtimeState == .speechDetected || self.runtimeState == .partialTranscription else { return }
 
@@ -981,6 +1040,7 @@ final class AppState: ObservableObject {
                 if self.firstPartialTranscriptAt == nil {
                     let partialAt = Date()
                     self.firstPartialTranscriptAt = partialAt
+                    await self.performanceLogger.setFirstPartialASRDuration(partialASRDuration)
                     if let recordingStartedAt {
                         await self.performanceLogger.setFirstPartialLatency(
                             partialAt.timeIntervalSince(recordingStartedAt)
@@ -1001,13 +1061,16 @@ final class AppState: ObservableObject {
         metrics: LatencyMetrics,
         error: String?
     ) {
+        guard settings.privacy.savePerformanceLogs else { return }
+        let shouldIncludeTargetApp = !settings.privacy.privacyMode && settings.privacy.includeTargetAppInLogs
+        let shouldIncludeTargetBundle = !settings.privacy.privacyMode && settings.privacy.includeTargetBundleIdentifierInLogs
         let record = PerformanceLogRecord(
             triggerMode: settings.dictation.triggerMode.rawValue,
             asrBackend: model.backend.rawValue,
             modelID: model.id,
             outputProfile: profile.profile.rawValue,
-            targetAppName: settings.privacy.privacyMode ? nil : profile.targetAppName,
-            targetBundleIdentifier: settings.privacy.privacyMode ? nil : profile.targetBundleIdentifier,
+            targetAppName: shouldIncludeTargetApp ? profile.targetAppName : nil,
+            targetBundleIdentifier: shouldIncludeTargetBundle ? profile.targetBundleIdentifier : nil,
             streamingMode: model.backend == .fluidAudio ? "pseudoStreaming" : "finalOnly",
             durationRecorded: audioDuration,
             metrics: metrics,

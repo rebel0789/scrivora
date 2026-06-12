@@ -2,7 +2,7 @@
 
 Date: 2026-06-12
 
-Automated paste QA is limited because it depends on real focused apps and macOS Accessibility permission. Scrivora V0.2 uses clipboard paste as the reliable path:
+Automated paste QA is limited because it depends on real focused apps and macOS Accessibility permission. Scrivora V0.3 uses clipboard paste as the reliable path:
 
 1. Preserve pasteboard items.
 2. Put final transcript on the clipboard.
@@ -12,6 +12,19 @@ Automated paste QA is limited because it depends on real focused apps and macOS 
 6. If Accessibility paste cannot run, leave the transcript copied for manual paste.
 
 Default restore delay: 600 ms.
+
+V0.3 status:
+
+- The insertion service copies the final transcript before attempting Command-V.
+- If Accessibility paste fails, the transcript remains copied for manual paste.
+- Clipboard restoration still defaults to 600 ms and is part of user-facing stop-to-insert latency.
+- Full app-by-app verification is still pending after the V0.3 privacy changes.
+
+V0.3 note:
+
+- If Accessibility paste fails, text has already been copied to the clipboard for manual paste.
+- The app now documents Accessibility usage in the first-run privacy screen and Dashboard permissions panel.
+- Paste substep timing is still not implemented; Debug currently shows cleanup-to-paste and final stop-to-inserted timing.
 
 | App | Direct AX insertion | Clipboard paste | Clipboard restore | Suggested delay | Status |
 | --- | --- | --- | --- | ---: | --- |
@@ -44,4 +57,3 @@ For each app:
 8. Confirm final text appears.
 9. Confirm prior clipboard restores after the configured delay.
 10. Repeat with copy-only mode.
-

@@ -26,6 +26,9 @@ The current MVP code includes:
 - Local JSON settings/history stores.
 - Local model catalog and model storage.
 - Debug/performance metrics and local JSONL latency logs.
+- First-run privacy profiles with Maximum Privacy as the fresh-install default.
+- Structured privacy export and redacted debug export.
+- Sensitive-file audit and dev-signing cleanup scripts.
 - Swift 6 `Testing` coverage for core pipeline behavior.
 
 ## Requirements
@@ -59,11 +62,11 @@ LOCALVOICEFLOW_USE_MOCK_ASR=1 swift run LocalVoiceFlowApp
 Create a local signed development app bundle:
 
 ```bash
-Scripts/package_app_bundle.sh
+Scripts/package_dev_app.sh
 open .build/Scrivora.app
 ```
 
-The bundle script writes an `Info.plist` with microphone usage text and signs ad-hoc when `codesign` is available.
+The bundle script writes an `Info.plist` with microphone usage text and signs with the local development identity when available. If no local identity exists, it creates one under `.build/dev-signing`.
 
 For day-to-day testing with microphone and Accessibility permissions, install the app to a stable path first:
 
@@ -74,13 +77,63 @@ open "/Applications/Scrivora.app"
 
 Grant microphone and Accessibility permissions to `/Applications/Scrivora.app`, not the temporary `.build` copy. The bundle ID remains `app.localvoiceflow.mvp` and the local development signing identity remains `LocalVoiceFlow Development` to keep the macOS permission identity stable during the public rename.
 
-The packaging script now creates and uses a local self-signed code-signing identity named `LocalVoiceFlow Development` when no Apple Developer ID identity is available. This gives macOS privacy permissions a stable designated requirement across rebuilds:
+The packaging script creates and uses a local self-signed code-signing identity named `LocalVoiceFlow Development` when no Apple Developer ID identity is available. This gives macOS privacy permissions a stable designated requirement across rebuilds:
 
 ```text
 identifier "app.localvoiceflow.mvp" and certificate root = <LocalVoiceFlow Development certificate>
 ```
 
 Vowen and Wispr Flow avoid repeated permission prompts by using notarized Developer ID signatures. The local development identity is the closest equivalent for this unsigned MVP; for production, replace it with a real Developer ID Application certificate.
+
+Development signing material is intentionally kept out of normal app support:
+
+```text
+.build/dev-signing
+```
+
+If an older build created signing files in `~/Library/Application Support/LocalVoiceFlow/Signing`, move them with:
+
+```bash
+Scripts/clean_dev_signing_material.sh --move
+```
+
+Audit local sensitive files without printing file contents:
+
+```bash
+Scripts/audit_sensitive_files.sh
+```
+
+## Privacy Profiles
+
+Fresh installs now default to `Maximum Privacy`:
+
+- Privacy Mode on.
+- Transcript history off.
+- Learning memory off.
+- Performance logs on, with target app and bundle metadata off.
+- Raw audio off.
+- Analytics off.
+
+The first app launch asks the user to choose one local privacy profile:
+
+- `Maximum Privacy`: no transcript history, no learning memory, no target app metadata.
+- `Balanced Local Memory`: saves transcript history and correction memory locally.
+- `Debug Mode`: saves local diagnostics and target app metadata for troubleshooting.
+
+Offline Mode blocks remote model downloads from the app. It still allows local model files and local helper services such as `whisper-server` bound to `127.0.0.1`.
+
+## Privacy Export
+
+Settings -> Privacy includes export presets:
+
+- Settings only.
+- History only.
+- Learning only.
+- Performance logs only.
+- Full local package.
+- Redacted debug package.
+
+The redacted debug package removes transcript text, correction text, target app metadata, target bundle identifiers, and local filesystem paths. It does not export model files or signing material.
 
 ## Local ASR Setup
 
@@ -118,7 +171,7 @@ Parakeet models are stored by FluidAudio in:
 ~/Library/Application Support/FluidAudio/Models
 ```
 
-V0.2 defaults to `Parakeet V2 English` for Instant mode. V3 remains available as the Balanced multilingual option.
+V0.3 fresh installs default to `Parakeet V2 English` for Instant mode. V3 remains available as the Balanced multilingual option.
 
 ### Fallback: whisper.cpp
 
@@ -230,6 +283,7 @@ Subfolders:
 - `Models`
 - `Settings`
 - `History`
+- `Learning`
 - `Logs`
 
 Raw audio is not stored by default.
@@ -244,6 +298,7 @@ Raw audio is not stored by default.
 - Direct accessibility insertion is best-effort. Clipboard paste remains the reliable path across browsers and Electron apps.
 - Clipboard restoration is configurable and defaults to 600 ms after paste.
 - App-aware cleanup currently uses foreground app name and bundle ID only. Browser tab/site-specific routing is not production-ready yet.
+- Release signing/notarization is documented in `DISTRIBUTION.md` but not production-implemented.
 
 ## Local Improvement Loop
 

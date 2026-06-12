@@ -126,6 +126,15 @@ struct PreferencesRootView: View {
     @State private var selection: MainSection? = .dashboard
 
     var body: some View {
+        if appState.needsFirstRunPrivacyChoice {
+            PrivacyOnboardingView()
+                .frame(minWidth: 1080, minHeight: 720)
+        } else {
+            mainPreferences
+        }
+    }
+
+    private var mainPreferences: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 SidebarHeader()
@@ -222,6 +231,94 @@ struct PreferencesRootView: View {
         case .processing: .orange
         case .failed: .red
         }
+    }
+}
+
+private struct PrivacyOnboardingView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(
+                    title: "Choose Privacy",
+                    subtitle: "Pick what Scrivora may save locally on this Mac.",
+                    systemImage: "lock.shield.fill",
+                    accent: .teal
+                )
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
+                    PrivacyChoiceCard(
+                        profile: .maximumPrivacy,
+                        title: "Maximum Privacy",
+                        detail: "No transcript history, no learning memory, no target app names in logs.",
+                        systemImage: "lock.fill"
+                    )
+                    PrivacyChoiceCard(
+                        profile: .balancedLocalMemory,
+                        title: "Balanced Local Memory",
+                        detail: "Saves transcript history and corrections locally so cleanup can improve.",
+                        systemImage: "sparkles"
+                    )
+                    PrivacyChoiceCard(
+                        profile: .debugMode,
+                        title: "Debug Mode",
+                        detail: "Saves local diagnostics with target app metadata for troubleshooting.",
+                        systemImage: "ladybug.fill"
+                    )
+                }
+
+                Panel("Permission Use") {
+                    Text("Scrivora needs Accessibility permission only to detect your dictation trigger and paste the final text into the app you are using. Your audio is transcribed locally.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 34)
+            .padding(.vertical, 30)
+            .frame(maxWidth: 980, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct PrivacyChoiceCard: View {
+    @EnvironmentObject private var appState: AppState
+    var profile: PrivacyProfile
+    var title: String
+    var detail: String
+    var systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(profile == .maximumPrivacy ? .teal : profile == .balancedLocalMemory ? .purple : .orange)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Button {
+                appState.applyPrivacyChoice(profile)
+            } label: {
+                Label(profile == .maximumPrivacy ? "Use Default" : "Use \(profile.displayName)", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
@@ -1133,6 +1230,10 @@ struct DashboardView: View {
 
             Panel("Permissions", subtitle: "macOS access required for the core loop") {
                 VStack(spacing: 10) {
+                    Text("Scrivora needs Accessibility permission only to detect your dictation trigger and paste the final text into the app you are using. Your audio is transcribed locally.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     PermissionRow(
                         title: "Microphone",
                         state: appState.microphonePermission,
@@ -1800,8 +1901,70 @@ private struct StorageUsageRow: View {
     }
 }
 
+private enum PrivacyExportPreset: String, CaseIterable, Identifiable {
+    case settingsOnly
+    case historyOnly
+    case learningOnly
+    case performanceLogsOnly
+    case fullLocalPackage
+    case redactedDebugPackage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .settingsOnly: "Settings"
+        case .historyOnly: "History"
+        case .learningOnly: "Learning"
+        case .performanceLogsOnly: "Performance Logs"
+        case .fullLocalPackage: "Full Local Package"
+        case .redactedDebugPackage: "Redacted Debug Package"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .settingsOnly: "Exports preferences with local paths removed."
+        case .historyOnly: "Exports saved transcript history with transcript text included."
+        case .learningOnly: "Exports saved correction memory with correction text included."
+        case .performanceLogsOnly: "Exports latency logs with target metadata preserved if it was logged."
+        case .fullLocalPackage: "Exports all local text, settings, logs, storage sizes, and debug summary."
+        case .redactedDebugPackage: "Exports support diagnostics without transcript text, target metadata, or local paths."
+        }
+    }
+
+    var includedItems: [String] {
+        switch self {
+        case .settingsOnly:
+            ["settings.json", "manifest.json"]
+        case .historyOnly:
+            ["history.json", "manifest.json"]
+        case .learningOnly:
+            ["learning-corrections.json", "manifest.json"]
+        case .performanceLogsOnly:
+            ["performance-logs.jsonl", "manifest.json"]
+        case .fullLocalPackage:
+            ["settings.json", "history.json", "learning-corrections.json", "performance-logs.jsonl", "storage-summary.json", "debug-summary.json", "manifest.json"]
+        case .redactedDebugPackage:
+            ["settings.json", "history.json", "learning-corrections.json", "performance-logs-redacted.jsonl", "storage-summary.json", "debug-summary.json", "manifest.json"]
+        }
+    }
+
+    var options: PrivacyExportOptions {
+        switch self {
+        case .settingsOnly: .settingsOnly
+        case .historyOnly: .historyOnly
+        case .learningOnly: .learningOnly
+        case .performanceLogsOnly: .performanceLogsOnly
+        case .fullLocalPackage: .fullLocalPackage
+        case .redactedDebugPackage: .redactedDebugPackage
+        }
+    }
+}
+
 struct PrivacyView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var exportPreset: PrivacyExportPreset = .redactedDebugPackage
 
     var body: some View {
         PageHeader(
@@ -1810,6 +1973,22 @@ struct PrivacyView: View {
             systemImage: "lock.shield.fill",
             accent: .teal
         )
+
+        Panel("Privacy Profile", subtitle: "The fresh install default is Maximum Privacy.") {
+            SettingsLine("Profile") {
+                Picker("Profile", selection: Binding(
+                    get: { appState.settings.privacy.selectedPrivacyProfile },
+                    set: { appState.applyPrivacyChoice($0) }
+                )) {
+                    ForEach(PrivacyProfile.allCases, id: \.self) { profile in
+                        Text(profile.displayName).tag(profile)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+            }
+            InfoRow("Current", appState.settings.privacy.selectedPrivacyProfile.displayName)
+        }
 
         Panel("Data Policy", subtitle: "Audio is not saved by default.") {
             Toggle("Privacy mode", isOn: Binding(
@@ -1820,6 +1999,24 @@ struct PrivacyView: View {
                 get: { appState.settings.privacy.saveTranscriptHistory },
                 set: { appState.settings.privacy.saveTranscriptHistory = $0; appState.saveSettings() }
             ))
+            Toggle("Save learning memory", isOn: Binding(
+                get: { appState.settings.privacy.saveLearningMemory },
+                set: { appState.settings.privacy.saveLearningMemory = $0; appState.saveSettings() }
+            ))
+            Toggle("Save performance logs", isOn: Binding(
+                get: { appState.settings.privacy.savePerformanceLogs },
+                set: { appState.settings.privacy.savePerformanceLogs = $0; appState.saveSettings() }
+            ))
+            Toggle("Include target app in logs", isOn: Binding(
+                get: { appState.settings.privacy.includeTargetAppInLogs },
+                set: { appState.settings.privacy.includeTargetAppInLogs = $0; appState.saveSettings() }
+            ))
+            .disabled(appState.settings.privacy.privacyMode)
+            Toggle("Include target bundle in logs", isOn: Binding(
+                get: { appState.settings.privacy.includeTargetBundleIdentifierInLogs },
+                set: { appState.settings.privacy.includeTargetBundleIdentifierInLogs = $0; appState.saveSettings() }
+            ))
+            .disabled(appState.settings.privacy.privacyMode)
             Toggle("Save audio", isOn: Binding(
                 get: { appState.settings.privacy.saveAudio },
                 set: { appState.settings.privacy.saveAudio = $0; appState.saveSettings() }
@@ -1830,9 +2027,46 @@ struct PrivacyView: View {
             ))
         }
 
+        Panel("Export", subtitle: "Review package contents before writing an export folder.") {
+            SettingsLine("Package") {
+                Picker("Package", selection: $exportPreset) {
+                    ForEach(PrivacyExportPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .labelsHidden()
+            }
+            Text(exportPreset.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(exportPreset.includedItems, id: \.self) { item in
+                    Label(item, systemImage: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let message = appState.privacyExportMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Button {
+                appState.exportPrivacyData(options: exportPreset.options)
+            } label: {
+                Label("Export Package", systemImage: "square.and.arrow.up")
+            }
+        }
+
         Panel("Local Storage", subtitle: "Review and remove local data kept on this Mac.") {
             InfoRow("Total tracked storage", appState.totalLocalStorageSize)
             InfoRow("Data folder", appState.dataFolderPath)
+            if let migration = appState.storageMigrationStatus {
+                InfoRow("Storage name", migration.usingLegacyRoot ? "Legacy LocalVoiceFlow folder" : "Scrivora folder")
+                InfoRow("Legacy folder", migration.legacyRootExists ? "Present" : "Not present")
+                InfoRow("Scrivora folder", migration.scrivoraRootExists ? "Present" : "Not present")
+            }
 
             Divider()
 
@@ -1907,6 +2141,8 @@ struct DebugPerformanceView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 14)], spacing: 14) {
             MetricTile(title: "Hotkey -> Record", value: formatted(appState.latestMetrics.hotkeyToRecordingStart), caption: "trigger latency", systemImage: "keyboard", tint: .blue)
             MetricTile(title: "Record -> Speech", value: formatted(appState.latestMetrics.recordingStartToSpeechDetected), caption: "VAD detection", systemImage: "waveform", tint: .green)
+            MetricTile(title: "Partial Request", value: formatted(appState.latestMetrics.firstPartialRequestLatency), caption: "recording to partial job", systemImage: "text.badge.plus", tint: .cyan)
+            MetricTile(title: "Partial ASR", value: formatted(appState.latestMetrics.firstPartialASRDuration), caption: "first partial inference", systemImage: "waveform.badge.magnifyingglass", tint: .indigo)
             MetricTile(title: "First Partial", value: formatted(appState.latestMetrics.firstPartialLatency), caption: "overlay feedback", systemImage: "text.bubble", tint: .teal)
             MetricTile(title: "Speech -> ASR", value: formatted(appState.latestMetrics.speechEndToFinalASR), caption: "final transcript", systemImage: "speedometer", tint: .orange)
             MetricTile(title: "ASR -> Cleanup", value: formatted(appState.latestMetrics.finalASRToCleanup), caption: "post-processing", systemImage: "wand.and.sparkles", tint: .purple)

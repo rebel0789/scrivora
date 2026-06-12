@@ -6,7 +6,7 @@ Scrivora is a native macOS menu bar dictation assistant. It records speech from 
 
 Positioning: Scrivora — speak, and your Mac writes. Private dictation for Mac. Local AI. No subscription.
 
-The repo and Swift modules may still use `LocalVoiceFlow` internally during V0.2. Public-facing app name, copy, bundle display name, and installed app path are Scrivora.
+The repo and Swift modules may still use `LocalVoiceFlow` internally during V0.3. Public-facing app name, copy, bundle display name, and installed app path are Scrivora.
 
 ## MVP
 
@@ -41,13 +41,16 @@ The MVP must prove the fast privacy-first loop:
 - Debug/performance.
 - About.
 
-## V0.2 Instant Dictation Feel
+## V0.3 Instant Dictation Feel And Privacy
 
 - Default mode: Parakeet V2 English + Fast deterministic cleanup.
 - Fallback mode: persistent whisper-server.
 - Emergency fallback: whisper-cli.
 - Trigger modes: global shortcut, Hold Control, Double-tap Control.
 - Partial transcription: pseudo-streaming Parakeet rolling-window partials.
+- Fresh-install privacy: Maximum Privacy.
+- Privacy export: settings, history, learning, performance logs, full local package, and redacted debug package.
+- Offline Mode: blocks remote model downloads while allowing local models and localhost helper services.
 - True FluidAudio streaming/EOU remains future work.
 
 ## MVP Privacy Defaults
@@ -55,8 +58,9 @@ The MVP must prove the fast privacy-first loop:
 - No analytics.
 - No account.
 - No audio saved.
-- Transcript history enabled only if the user leaves it enabled.
-- Privacy mode disables history immediately.
+- Transcript history disabled by default.
+- Learning memory disabled by default.
+- Privacy Mode redacts target app metadata from logs.
 - Network only used for explicit model downloads.
 - Data and models stored under Application Support.
 

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/.build/Scrivora.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
-SIGNING_DIR="$HOME/Library/Application Support/LocalVoiceFlow/Signing"
+SIGNING_DIR="${LOCALVOICEFLOW_DEV_SIGNING_DIR:-$ROOT/.build/dev-signing}"
 LOCAL_KEYCHAIN="$SIGNING_DIR/LocalVoiceFlowSigning.keychain-db"
 LOCAL_KEYCHAIN_PASSWORD_FILE="$SIGNING_DIR/keychain-password.txt"
 DEFAULT_IDENTITY="LocalVoiceFlow Development"
@@ -33,7 +33,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.0</string>
+  <string>0.3.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
@@ -49,7 +49,7 @@ if command -v codesign >/dev/null 2>&1; then
   SIGN_KEYCHAIN="${LOCALVOICEFLOW_CODESIGN_KEYCHAIN:-}"
 
   if [[ -z "$SIGN_IDENTITY" && -x "$ROOT/Scripts/create_local_codesign_identity.sh" ]]; then
-    SIGN_IDENTITY="$("$ROOT/Scripts/create_local_codesign_identity.sh")"
+    SIGN_IDENTITY="$(LOCALVOICEFLOW_DEV_SIGNING_DIR="$SIGNING_DIR" "$ROOT/Scripts/create_local_codesign_identity.sh")"
     SIGN_KEYCHAIN="$LOCAL_KEYCHAIN"
   fi
 

@@ -4,7 +4,7 @@ Audit date: 2026-06-12
 
 Public product name: Scrivora.
 
-Internal Swift target/module names still use `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.2. The bundle executable also remains `LocalVoiceFlowApp`. This avoids a risky internal rename while preserving the working MVP.
+Internal Swift target/module names still use `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.3. The bundle executable also remains `LocalVoiceFlowApp`. This avoids a risky internal rename while preserving the working MVP and macOS permission continuity.
 
 Current bundle ID: `app.localvoiceflow.mvp`.
 
@@ -13,6 +13,24 @@ Current signing identity: `LocalVoiceFlow Development`.
 Current install path: `/Applications/Scrivora.app`.
 
 Existing macOS permissions should remain attached to the signed app identity because the bundle ID and signing identity were preserved. If macOS still shows the old display name in System Settings, remove the old entry and grant permissions to `/Applications/Scrivora.app`.
+
+## V0.3 Addendum
+
+Current verification on 2026-06-12:
+
+- Safe checkpoint commit created: `09f629b Checkpoint Scrivora v0.2 working local MVP`.
+- Safe checkpoint tag created: `scrivora-v0.2-working-local-mvp`.
+- `swift test`: passed with 49 tests after privacy/export additions.
+- Fresh-install privacy default is now Maximum Privacy.
+- First-run privacy choice is implemented in the Settings window.
+- Structured privacy export is implemented.
+- Redacted debug export removes transcript text, correction text, target app metadata, target bundle identifiers, and local filesystem paths.
+- Offline Mode blocks remote model downloads from the app UI and still allows local models/local services.
+- Dev signing material was moved from `~/Library/Application Support/LocalVoiceFlow/Signing` to `.build/dev-signing`.
+- `Scripts/audit_sensitive_files.sh` and `Scripts/clean_dev_signing_material.sh` were added.
+- Release signing/notarization remains documented but not production-implemented.
+- True FluidAudio streaming/EOU is still not implemented; Parakeet partials remain rolling-window pseudo-streaming.
+- Paste QA remains partially manual; see `PASTE_QA.md`.
 
 ## Verification Commands
 
@@ -26,9 +44,9 @@ Scripts/package_app_bundle.sh
 
 Results:
 
-- `swift test`: passed, 27 tests after V0.2 cleanup/stabilizer/default-model updates.
+- `swift test`: passed, 49 tests after V0.3 privacy/export additions.
 - `swift build --product LocalVoiceFlowApp`: passed. `Package.swift` and `Package.resolved` point at `https://github.com/FluidInference/FluidAudio.git` version `0.15.2`. The official GitHub dependency fetch stalled in this local session, so the workspace uses an ignored SwiftPM mirror at `Vendor/FluidAudio`; this replaces the earlier broken `/tmp/FluidAudio` mirror.
-- `Scripts/package_app_bundle.sh`: passed and now produces `.build/Scrivora.app`, signed with `LocalVoiceFlow Development`.
+- `Scripts/package_app_bundle.sh`: passed and now produces `.build/Scrivora.app`, version `0.3.0`, signed with `LocalVoiceFlow Development`.
 
 Additional real ASR verification:
 

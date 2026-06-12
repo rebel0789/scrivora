@@ -5,6 +5,27 @@ Repo: `/Users/rebel/Documents/wishperflow`
 Installed app tested: `/Applications/Scrivora.app`
 Executable: `/Applications/Scrivora.app/Contents/MacOS/LocalVoiceFlowApp`
 
+## V0.3 Privacy And Security Update
+
+Implemented after the previous performance pass:
+
+- Fresh installs now default to Maximum Privacy.
+- First-run privacy choice asks the user before enabling transcript history or learning memory.
+- Privacy screen exposes separate controls for transcript history, learning memory, performance logs, target app logging, target bundle logging, audio saving, and Offline Mode.
+- Structured privacy export is implemented.
+- Redacted debug export excludes transcript text, correction text, target app names, target bundle identifiers, local paths, audio, model files, and signing material.
+- Offline Mode blocks remote model downloads from the app UI.
+- Development signing material was moved out of normal app support and into `.build/dev-signing`.
+- Sensitive-file audit and cleanup scripts were added.
+- `swift test` now passes with 49 tests.
+
+Not completed in V0.3:
+
+- true FluidAudio streaming/EOU
+- stop-to-insert metric sub-breakdown
+- automated paste QA across every target app
+- production Developer ID signing and notarization
+
 ## Summary
 
 Scrivora is now a working local dictation MVP. The core loop is usable:
@@ -24,6 +45,17 @@ Follow-up implemented after the first report:
 - Privacy screen now shows tracked local storage sizes.
 - Privacy screen now has controls to clear transcript history, learning memory, performance logs, or all local text/debug data together.
 - Performance log storage now has a tested clear path.
+
+V0.3 privacy hardening added after this report:
+
+- Fresh installs now default to Maximum Privacy: no transcript history, no learning memory, no target app metadata, no audio saving.
+- First-run privacy profile choice is implemented.
+- Settings -> Privacy can export settings/history/learning/log packages.
+- Redacted debug export removes transcript text, correction text, target app metadata, bundle identifiers, learned phrase entries, and local paths.
+- Offline Mode blocks in-app remote model downloads while keeping local models and localhost helpers usable.
+- Dev signing material moved to ignored `.build/dev-signing`.
+- Latest `swift test`: 49 tests passed.
+- Latest package/install verification: `/Applications/Scrivora.app`, version `0.3.0`, signed with `LocalVoiceFlow Development`.
 
 ## What We Built So Far
 

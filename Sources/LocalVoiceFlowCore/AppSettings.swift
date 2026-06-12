@@ -95,6 +95,20 @@ public enum ASRUserMode: String, Codable, CaseIterable, Sendable {
     case experimental
 }
 
+public enum PrivacyProfile: String, Codable, CaseIterable, Sendable {
+    case maximumPrivacy
+    case balancedLocalMemory
+    case debugMode
+
+    public var displayName: String {
+        switch self {
+        case .maximumPrivacy: "Maximum Privacy"
+        case .balancedLocalMemory: "Balanced Local Memory"
+        case .debugMode: "Debug Mode"
+        }
+    }
+}
+
 public enum ShortcutModifier: String, Codable, CaseIterable, Sendable {
     case command
     case control
@@ -332,22 +346,120 @@ public struct PostProcessingSettings: Codable, Equatable, Sendable {
 public struct PrivacySettings: Codable, Equatable, Sendable {
     public var privacyMode: Bool
     public var saveTranscriptHistory: Bool
+    public var saveLearningMemory: Bool
+    public var savePerformanceLogs: Bool
+    public var includeTargetAppInLogs: Bool
+    public var includeTargetBundleIdentifierInLogs: Bool
     public var saveAudio: Bool
     public var offlineMode: Bool
     public var analyticsEnabled: Bool
+    public var firstRunPrivacyChoiceCompleted: Bool
+    public var selectedPrivacyProfile: PrivacyProfile
 
     public init(
-        privacyMode: Bool = false,
-        saveTranscriptHistory: Bool = true,
+        privacyMode: Bool = true,
+        saveTranscriptHistory: Bool = false,
+        saveLearningMemory: Bool = false,
+        savePerformanceLogs: Bool = true,
+        includeTargetAppInLogs: Bool = false,
+        includeTargetBundleIdentifierInLogs: Bool = false,
         saveAudio: Bool = false,
         offlineMode: Bool = false,
-        analyticsEnabled: Bool = false
+        analyticsEnabled: Bool = false,
+        firstRunPrivacyChoiceCompleted: Bool = false,
+        selectedPrivacyProfile: PrivacyProfile = .maximumPrivacy
     ) {
         self.privacyMode = privacyMode
         self.saveTranscriptHistory = saveTranscriptHistory
+        self.saveLearningMemory = saveLearningMemory
+        self.savePerformanceLogs = savePerformanceLogs
+        self.includeTargetAppInLogs = includeTargetAppInLogs
+        self.includeTargetBundleIdentifierInLogs = includeTargetBundleIdentifierInLogs
         self.saveAudio = saveAudio
         self.offlineMode = offlineMode
         self.analyticsEnabled = analyticsEnabled
+        self.firstRunPrivacyChoiceCompleted = firstRunPrivacyChoiceCompleted
+        self.selectedPrivacyProfile = selectedPrivacyProfile
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case privacyMode
+        case saveTranscriptHistory
+        case saveLearningMemory
+        case savePerformanceLogs
+        case includeTargetAppInLogs
+        case includeTargetBundleIdentifierInLogs
+        case saveAudio
+        case offlineMode
+        case analyticsEnabled
+        case firstRunPrivacyChoiceCompleted
+        case selectedPrivacyProfile
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedPrivacyMode = try container.decodeIfPresent(Bool.self, forKey: .privacyMode) ?? true
+        let decodedSaveTranscriptHistory = try container.decodeIfPresent(Bool.self, forKey: .saveTranscriptHistory) ?? false
+        let decodedSaveLearningMemory = try container.decodeIfPresent(Bool.self, forKey: .saveLearningMemory) ?? decodedSaveTranscriptHistory
+        let decodedSavePerformanceLogs = try container.decodeIfPresent(Bool.self, forKey: .savePerformanceLogs) ?? true
+        self.privacyMode = decodedPrivacyMode
+        self.saveTranscriptHistory = decodedSaveTranscriptHistory
+        self.saveLearningMemory = decodedSaveLearningMemory
+        self.savePerformanceLogs = decodedSavePerformanceLogs
+        self.includeTargetAppInLogs = try container.decodeIfPresent(Bool.self, forKey: .includeTargetAppInLogs) ?? false
+        self.includeTargetBundleIdentifierInLogs = try container.decodeIfPresent(Bool.self, forKey: .includeTargetBundleIdentifierInLogs) ?? false
+        self.saveAudio = try container.decodeIfPresent(Bool.self, forKey: .saveAudio) ?? false
+        self.offlineMode = try container.decodeIfPresent(Bool.self, forKey: .offlineMode) ?? false
+        self.analyticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .analyticsEnabled) ?? false
+        self.firstRunPrivacyChoiceCompleted = try container.decodeIfPresent(Bool.self, forKey: .firstRunPrivacyChoiceCompleted) ?? false
+        self.selectedPrivacyProfile = try container.decodeIfPresent(PrivacyProfile.self, forKey: .selectedPrivacyProfile) ?? .maximumPrivacy
+    }
+
+    public static func settings(for profile: PrivacyProfile) -> PrivacySettings {
+        switch profile {
+        case .maximumPrivacy:
+            return PrivacySettings(
+                privacyMode: true,
+                saveTranscriptHistory: false,
+                saveLearningMemory: false,
+                savePerformanceLogs: true,
+                includeTargetAppInLogs: false,
+                includeTargetBundleIdentifierInLogs: false,
+                saveAudio: false,
+                offlineMode: false,
+                analyticsEnabled: false,
+                firstRunPrivacyChoiceCompleted: true,
+                selectedPrivacyProfile: profile
+            )
+        case .balancedLocalMemory:
+            return PrivacySettings(
+                privacyMode: false,
+                saveTranscriptHistory: true,
+                saveLearningMemory: true,
+                savePerformanceLogs: true,
+                includeTargetAppInLogs: false,
+                includeTargetBundleIdentifierInLogs: false,
+                saveAudio: false,
+                offlineMode: false,
+                analyticsEnabled: false,
+                firstRunPrivacyChoiceCompleted: true,
+                selectedPrivacyProfile: profile
+            )
+        case .debugMode:
+            return PrivacySettings(
+                privacyMode: false,
+                saveTranscriptHistory: true,
+                saveLearningMemory: true,
+                savePerformanceLogs: true,
+                includeTargetAppInLogs: true,
+                includeTargetBundleIdentifierInLogs: true,
+                saveAudio: false,
+                offlineMode: false,
+                analyticsEnabled: false,
+                firstRunPrivacyChoiceCompleted: true,
+                selectedPrivacyProfile: profile
+            )
+        }
     }
 }
 
@@ -384,5 +496,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.models = try container.decodeIfPresent(ModelSettings.self, forKey: .models) ?? ModelSettings()
         self.postProcessing = try container.decodeIfPresent(PostProcessingSettings.self, forKey: .postProcessing) ?? PostProcessingSettings()
         self.privacy = try container.decodeIfPresent(PrivacySettings.self, forKey: .privacy) ?? PrivacySettings()
+    }
+}
+
+public enum NetworkAccessPolicy: Sendable {
+    public static func canDownloadRemoteModel(privacy: PrivacySettings) -> Bool {
+        !privacy.offlineMode
+    }
+
+    public static func canUseLocalModel(privacy: PrivacySettings) -> Bool {
+        true
+    }
+
+    public static func canUseLocalhostService(privacy: PrivacySettings) -> Bool {
+        true
     }
 }
