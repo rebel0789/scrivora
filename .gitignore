@@ -2,6 +2,9 @@
 .swiftpm/
 DerivedData/
 Vendor/
+BenchmarkSamples/*.wav
+BenchmarkSamples/manifest.csv
+__pycache__/
+*.pyc
 *.xcuserstate
 *.DS_Store
-

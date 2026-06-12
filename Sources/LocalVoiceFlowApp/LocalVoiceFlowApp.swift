@@ -8,17 +8,18 @@ struct LocalVoiceFlowApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
-        Window("LocalVoiceFlow", id: "main") {
+        Window(AppBrand.productName, id: "main") {
             PreferencesRootView()
                 .environmentObject(appState)
-                .frame(minWidth: 760, minHeight: 560)
+                .frame(minWidth: 1080, minHeight: 720)
         }
+        .defaultSize(width: 1180, height: 820)
 
         MenuBarExtra {
             MenuBarContentView()
                 .environmentObject(appState)
         } label: {
-            Label("LocalVoiceFlow", systemImage: appState.menuBarSystemImage)
+            Label(AppBrand.productName, systemImage: appState.menuBarSystemImage)
         }
         .menuBarExtraStyle(.menu)
     }

@@ -6,6 +6,7 @@ enum DictationRuntimeState: Equatable {
     case idle
     case listening
     case speechDetected
+    case partialTranscription
     case processing
     case finished
     case failed(String)
@@ -15,10 +16,23 @@ enum DictationRuntimeState: Equatable {
         case .idle: "Idle"
         case .listening: "Listening"
         case .speechDetected: "Speech detected"
+        case .partialTranscription: "Transcribing"
         case .processing: "Processing"
         case .finished: "Finished"
         case .failed: "Error"
         }
+    }
+}
+
+struct StorageUsageItem: Identifiable, Equatable {
+    let id: String
+    var title: String
+    var path: String
+    var byteCount: Int64
+    var detail: String
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
     }
 }
 
@@ -34,13 +48,26 @@ final class AppState: ObservableObject {
     @Published var microphonePermission: PermissionState = .unknown
     @Published var accessibilityPermission: PermissionState = .unknown
     @Published var modelDownloadMessage: String?
+    @Published var activeDictationProfile: ResolvedDictationProfile = .fallback
+    @Published var correctionRecords: [CorrectionRecord] = []
+    @Published var improvementStats = ImprovementStats()
+    @Published var learningMessage: String?
+    @Published var voiceLevel: Double = 0
+    @Published var voiceBrightness: Double = 0
+    @Published var voiceSpectrum: VoiceSpectrumBands = .silent
+    @Published var storageUsageItems: [StorageUsageItem] = []
+    @Published var storageStatusMessage: String?
 
     let fileStore: LocalFileStore
     let modelCatalog = ModelCatalog.default
 
     private let settingsStore: SettingsStore
     private let historyStore: HistoryStore
+    private let performanceLogStore: PerformanceLogStore
+    private let correctionStore: CorrectionStore
     private let modelStorage: ModelStorage
+    private let appProfileResolver = AppProfileResolver()
+    private let correctionLearner = CorrectionLearner()
     private let audioCapture = AudioCaptureService()
     private let textInserter = TextInsertionService()
     private let permissions = PermissionsManager()
@@ -55,26 +82,39 @@ final class AppState: ObservableObject {
     private var recordingStartedAt: Date?
     private var speechEndedAt: Date?
     private var firstSpeechDetectedAt: Date?
+    private var firstPartialTranscriptAt: Date?
     private var cachedASREngine: (modelID: String, engine: any ASREngine)?
     private var targetApplication: NSRunningApplication?
     private var lastNonLocalVoiceFlowApplication: NSRunningApplication?
+    private var partialTranscriptTask: Task<Void, Never>?
+    private var lastPartialRequestedAt: Date?
+    private var partialStabilizer = PartialTranscriptStabilizer(requiredRepeats: 2)
+    private var partialSequenceNumber = 0
 
     init() {
         fileStore = LocalFileStore()
         settingsStore = SettingsStore(directory: fileStore.settingsDirectory)
         historyStore = HistoryStore(directory: fileStore.historyDirectory)
+        performanceLogStore = PerformanceLogStore(directory: fileStore.logsDirectory)
+        correctionStore = CorrectionStore(directory: fileStore.learningDirectory)
         modelStorage = ModelStorage(directory: fileStore.modelsDirectory)
 
         try? fileStore.prepareDirectories()
         settings = (try? settingsStore.load()) ?? .default
         normalizeSettingsForImplementedBackend()
         history = (try? historyStore.load()) ?? []
+        correctionRecords = (try? correctionStore.load()) ?? []
+        improvementStats = (try? correctionStore.stats()) ?? ImprovementStats()
+        refreshStorageUsage()
 
         refreshPermissions()
         configureSilenceDetector()
         registerHotkey()
         observeApplicationActivation()
         observeTermination()
+        Task { @MainActor [weak self] in
+            self?.syncOverlay()
+        }
         Task { await prepareSelectedASRModelIfPossible() }
     }
 
@@ -84,6 +124,8 @@ final class AppState: ObservableObject {
             "waveform"
         case .listening, .speechDetected:
             "mic.fill"
+        case .partialTranscription:
+            "waveform.badge.magnifyingglass"
         case .processing:
             "gearshape.2.fill"
         case .failed:
@@ -97,6 +139,11 @@ final class AppState: ObservableObject {
 
     var dataFolderPath: String {
         fileStore.rootDirectory.path
+    }
+
+    var totalLocalStorageSize: String {
+        let total = storageUsageItems.reduce(Int64(0)) { $0 + $1.byteCount }
+        return ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
     }
 
     func refreshPermissions() {
@@ -120,7 +167,7 @@ final class AppState: ObservableObject {
 
     func toggleDictation() {
         switch runtimeState {
-        case .listening, .speechDetected:
+        case .listening, .speechDetected, .partialTranscription:
             stopDictation()
         case .processing:
             break
@@ -140,14 +187,22 @@ final class AppState: ObservableObject {
         ringBuffer.clear()
         chunkScheduler.reset()
         silenceDetector.reset()
+        voiceLevel = 0
+        voiceBrightness = 0
+        voiceSpectrum = .silent
         partialTranscript = ""
         finalTranscript = ""
         lastError = nil
         firstSpeechDetectedAt = nil
+        firstPartialTranscriptAt = nil
         speechEndedAt = nil
+        lastPartialRequestedAt = nil
+        partialSequenceNumber = 0
+        partialStabilizer.reset()
         dictationRequestedAt = dictationRequestedAt ?? Date()
         recordingStartedAt = Date()
         targetApplication = preferredTargetApplication()
+        activeDictationProfile = resolvedProfile(for: targetApplication)
 
         do {
             try audioCapture.start { [weak self] samples in
@@ -168,6 +223,11 @@ final class AppState: ObservableObject {
 
     func stopDictation() {
         audioCapture.stop()
+        voiceLevel = 0
+        voiceBrightness = 0
+        voiceSpectrum = .silent
+        partialTranscriptTask?.cancel()
+        partialTranscriptTask = nil
         guard runtimeState != .processing else { return }
         runtimeState = .processing
         syncOverlay()
@@ -277,9 +337,135 @@ final class AppState: ObservableObject {
         do {
             try historyStore.clear()
             history = []
+            refreshStorageUsage()
         } catch {
             fail(error.localizedDescription)
         }
+    }
+
+    func learnCorrection(for record: HistoryRecord, correctedTranscript: String) {
+        let corrected = correctedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !corrected.isEmpty else {
+            learningMessage = "Correction is empty."
+            return
+        }
+        guard corrected != record.finalTranscript else {
+            learningMessage = "No correction to learn."
+            return
+        }
+
+        let learning = correctionLearner.learn(
+            original: record.finalTranscript,
+            corrected: corrected
+        )
+        let correction = CorrectionRecord(
+            originalTranscript: record.finalTranscript,
+            correctedTranscript: corrected,
+            targetAppName: record.targetAppName,
+            asrModelID: record.asrModelID,
+            outputProfile: record.outputProfile,
+            learnedEntries: learning.entries
+        )
+
+        do {
+            try correctionStore.append(correction)
+            mergeLearnedEntries(learning.entries)
+            saveSettings()
+            correctionRecords = (try? correctionStore.load()) ?? []
+            improvementStats = (try? correctionStore.stats()) ?? ImprovementStats()
+            refreshStorageUsage()
+            learningMessage = learning.entries.isEmpty
+                ? "Saved correction. No safe automatic phrase rule was inferred."
+                : "Learned \(learning.entries.count) phrase rule\(learning.entries.count == 1 ? "" : "s")."
+        } catch {
+            learningMessage = error.localizedDescription
+        }
+    }
+
+    func clearCorrections() {
+        do {
+            try correctionStore.clear()
+            correctionRecords = []
+            improvementStats = ImprovementStats()
+            learningMessage = "Correction memory cleared."
+            refreshStorageUsage()
+        } catch {
+            learningMessage = error.localizedDescription
+        }
+    }
+
+    func clearPerformanceLogs() {
+        do {
+            try performanceLogStore.clear()
+            storageStatusMessage = "Performance logs cleared."
+            refreshStorageUsage()
+        } catch {
+            storageStatusMessage = error.localizedDescription
+        }
+    }
+
+    func clearLocalTextData() {
+        do {
+            try historyStore.clear()
+            try correctionStore.clear()
+            try performanceLogStore.clear()
+            history = []
+            correctionRecords = []
+            improvementStats = ImprovementStats()
+            storageStatusMessage = "History, learning, and performance logs cleared."
+            refreshStorageUsage()
+        } catch {
+            storageStatusMessage = error.localizedDescription
+        }
+    }
+
+    func refreshStorageUsage() {
+        let performanceLogURL = fileStore.logsDirectory.appendingPathComponent("dictation-performance.jsonl")
+        let fluidAudioRoot = fluidAudioSupportDirectory()
+        storageUsageItems = [
+            StorageUsageItem(
+                id: "history",
+                title: "Transcript history",
+                path: fileStore.historyDirectory.path,
+                byteCount: byteCount(at: fileStore.historyDirectory),
+                detail: "\(history.count) saved dictations"
+            ),
+            StorageUsageItem(
+                id: "learning",
+                title: "Learning memory",
+                path: fileStore.learningDirectory.path,
+                byteCount: byteCount(at: fileStore.learningDirectory),
+                detail: "\(improvementStats.correctionCount) correction records"
+            ),
+            StorageUsageItem(
+                id: "performance",
+                title: "Performance logs",
+                path: fileStore.logsDirectory.path,
+                byteCount: byteCount(at: fileStore.logsDirectory),
+                detail: "\(lineCount(at: performanceLogURL)) latency entries"
+            ),
+            StorageUsageItem(
+                id: "settings",
+                title: "Settings",
+                path: fileStore.settingsDirectory.path,
+                byteCount: byteCount(at: fileStore.settingsDirectory),
+                detail: "preferences and local paths"
+            ),
+            StorageUsageItem(
+                id: "whisper-models",
+                title: "Whisper models",
+                path: fileStore.modelsDirectory.path,
+                byteCount: byteCount(at: fileStore.modelsDirectory),
+                detail: "local fallback models"
+            ),
+            StorageUsageItem(
+                id: "fluidaudio-models",
+                title: "FluidAudio models",
+                path: fluidAudioRoot.path,
+                byteCount: byteCount(at: fluidAudioRoot),
+                detail: "Parakeet model cache"
+            )
+        ]
     }
 
     func openDataFolder() {
@@ -298,6 +484,7 @@ final class AppState: ObservableObject {
 
     private func handleCapturedSamples(_ samples: [Float]) {
         ringBuffer.append(samples)
+        updateVoiceLevel(samples)
 
         let isSpeech = vad.isSpeech(samples)
         if isSpeech {
@@ -310,9 +497,12 @@ final class AppState: ObservableObject {
                 }
             }
             runtimeState = .speechDetected
-            partialTranscript = "Listening..."
+            if partialTranscript.isEmpty {
+                partialTranscript = "Listening..."
+            }
             syncOverlay()
-        } else if runtimeState == .speechDetected {
+            requestPartialTranscriptionIfNeeded()
+        } else if runtimeState == .speechDetected || runtimeState == .partialTranscription {
             runtimeState = .listening
             syncOverlay()
         }
@@ -338,13 +528,35 @@ final class AppState: ObservableObject {
             await performanceLogger.setSpeechEndToFinalASR(asrWatch.elapsedSeconds())
 
             let cleanupWatch = Stopwatch()
-            let cleaned = TextPostProcessor().process(result.text, settings: settings.postProcessing)
+            let profile = resolvedProfile(for: targetApplication)
+            activeDictationProfile = profile
+            let cleaned = TextPostProcessor().process(
+                result.text,
+                settings: settings.postProcessing,
+                profile: profile.profile
+            )
             await performanceLogger.setFinalASRToCleanup(cleanupWatch.elapsedSeconds())
+
+            if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                finalTranscript = ""
+                partialTranscript = ""
+                latestMetrics = await performanceLogger.finishCurrent()
+                logPerformanceRecord(
+                    model: model,
+                    profile: profile,
+                    audioDuration: audio.durationSeconds,
+                    metrics: latestMetrics,
+                    error: "Empty transcript"
+                )
+                lastError = nil
+                runtimeState = .finished
+                syncOverlay()
+                return
+            }
 
             finalTranscript = cleaned
             partialTranscript = ""
             latestMetrics = await performanceLogger.latest()
-            refreshPermissions()
 
             var nonFatalErrors: [String] = []
             let targetAppName = targetApplication?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName
@@ -353,11 +565,13 @@ final class AppState: ObservableObject {
                 targetAppName: targetAppName,
                 asrModelID: model.id,
                 cleanupMode: settings.postProcessing.cleanupMode,
+                outputProfile: profile.profile.rawValue,
                 latencyMetrics: latestMetrics
             )
             do {
                 try historyStore.append(record, respecting: settings.privacy)
                 history = (try? historyStore.load()) ?? []
+                refreshStorageUsage()
             } catch {
                 nonFatalErrors.append("History save failed: \(error.localizedDescription)")
             }
@@ -365,15 +579,18 @@ final class AppState: ObservableObject {
             if settings.dictation.copyToClipboard || settings.dictation.autoPaste {
                 let pasteWatch = Stopwatch()
                 do {
-                    try await textInserter.insertText(
+                    let insertResult = try await textInserter.insertText(
                         cleaned,
                         targetApplication: targetApplication,
                         autoPaste: settings.dictation.autoPaste,
-                        restoreClipboard: settings.dictation.restoreClipboardAfterPaste
+                        restoreClipboard: settings.dictation.restoreClipboardAfterPaste,
+                        restoreDelayMilliseconds: settings.dictation.clipboardRestoreDelayMilliseconds
                     )
+                    await performanceLogger.setPasteMethod(insertResult.method.rawValue)
                     await performanceLogger.setCleanupToPaste(pasteWatch.elapsedSeconds())
                 } catch {
                     nonFatalErrors.append("Text was transcribed and saved, but paste failed: \(error.localizedDescription)")
+                    await performanceLogger.setPasteMethod("copyFallback")
                     await performanceLogger.setCleanupToPaste(pasteWatch.elapsedSeconds())
                 }
             }
@@ -382,6 +599,13 @@ final class AppState: ObservableObject {
             }
 
             latestMetrics = await performanceLogger.finishCurrent()
+            logPerformanceRecord(
+                model: model,
+                profile: profile,
+                audioDuration: audio.durationSeconds,
+                metrics: latestMetrics,
+                error: nonFatalErrors.isEmpty ? nil : nonFatalErrors.joined(separator: " ")
+            )
             if nonFatalErrors.isEmpty {
                 lastError = nil
                 runtimeState = .finished
@@ -391,6 +615,15 @@ final class AppState: ObservableObject {
             }
             syncOverlay()
         } catch {
+            if let model = selectedModel {
+                logPerformanceRecord(
+                    model: model,
+                    profile: activeDictationProfile,
+                    audioDuration: audio.durationSeconds,
+                    metrics: latestMetrics,
+                    error: error.localizedDescription
+                )
+            }
             fail(error.localizedDescription)
         }
     }
@@ -531,7 +764,21 @@ final class AppState: ObservableObject {
         return lastNonLocalVoiceFlowApplication
     }
 
+    private func resolvedProfile(for app: NSRunningApplication?) -> ResolvedDictationProfile {
+        let appInfo = app.map {
+            ForegroundAppInfo(
+                bundleIdentifier: $0.bundleIdentifier,
+                localizedName: $0.localizedName
+            )
+        }
+        return appProfileResolver.resolve(app: appInfo, settings: settings.postProcessing)
+    }
+
     private func shutdown() {
+        audioCapture.stop()
+        voiceLevel = 0
+        voiceBrightness = 0
+        voiceSpectrum = .silent
         if let cachedASREngine {
             Task { await cachedASREngine.engine.unload() }
         }
@@ -542,6 +789,12 @@ final class AppState: ObservableObject {
         var didChangeSettings = false
         if settings.dictation.shortcut == .legacyDefault {
             settings.dictation.shortcut = .default
+            didChangeSettings = true
+        }
+
+        let mergedReplacements = CustomReplacement.mergingDefaults(with: settings.postProcessing.customReplacements)
+        if mergedReplacements != settings.postProcessing.customReplacements {
+            settings.postProcessing.customReplacements = mergedReplacements
             didChangeSettings = true
         }
 
@@ -565,6 +818,25 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func mergeLearnedEntries(_ entries: [UserDictionaryEntry]) {
+        guard !entries.isEmpty else { return }
+        var existing = settings.postProcessing.userDictionary
+        var existingKeys = Set(existing.map { normalizedDictionaryKey($0.spokenForm) })
+        for entry in entries {
+            let key = normalizedDictionaryKey(entry.spokenForm)
+            guard !key.isEmpty, !existingKeys.contains(key) else { continue }
+            existingKeys.insert(key)
+            existing.append(entry)
+        }
+        settings.postProcessing.userDictionary = existing
+    }
+
+    private func normalizedDictionaryKey(_ text: String) -> String {
+        text.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func configureSilenceDetector() {
         let frameMilliseconds = 30
         let frames = max(1, settings.dictation.silenceDurationMilliseconds / frameMilliseconds)
@@ -574,9 +846,24 @@ final class AppState: ObservableObject {
     private func registerHotkey() {
         hotkeyManager = HotkeyManager()
         do {
-            try hotkeyManager?.register(shortcut: settings.dictation.shortcut) { [weak self] in
-                self?.toggleDictation()
-            }
+            try hotkeyManager?.register(
+                shortcut: settings.dictation.shortcut,
+                triggerMode: settings.dictation.triggerMode,
+                holdThresholdMilliseconds: settings.dictation.holdControlThresholdMilliseconds,
+                doubleTapIntervalMilliseconds: settings.dictation.doubleTapControlIntervalMilliseconds,
+                onToggle: { [weak self] in
+                    self?.dictationRequestedAt = Date()
+                    self?.toggleDictation()
+                },
+                onStart: { [weak self] in
+                    guard let self else { return }
+                    self.dictationRequestedAt = Date()
+                    self.startDictation()
+                },
+                onStop: { [weak self] in
+                    self?.stopDictation()
+                }
+            )
         } catch {
             lastError = error.localizedDescription
         }
@@ -586,7 +873,55 @@ final class AppState: ObservableObject {
         lastError = message
         runtimeState = .failed(message)
         partialTranscript = ""
+        voiceLevel = 0
+        voiceBrightness = 0
+        voiceSpectrum = .silent
         syncOverlay()
+    }
+
+    private func updateVoiceLevel(_ samples: [Float]) {
+        guard !samples.isEmpty else {
+            voiceLevel *= 0.82
+            voiceBrightness *= 0.82
+            voiceSpectrum = voiceSpectrum.smoothed(toward: .silent, attack: 0.34, release: 0.22)
+            return
+        }
+
+        var sumSquares: Double = 0
+        var peak: Double = 0
+        var zeroCrossings = 0
+        var previousSample = samples[0]
+        for sample in samples {
+            let value = Double(sample)
+            sumSquares += value * value
+            peak = max(peak, abs(value))
+            if (previousSample < 0 && sample >= 0) || (previousSample >= 0 && sample < 0) {
+                zeroCrossings += 1
+            }
+            previousSample = sample
+        }
+
+        let rms = sqrt(sumSquares / Double(samples.count))
+        let rmsLevel = normalizedAudioLevel(rms, floor: 0.0035, ceiling: 0.055)
+        let peakLevel = normalizedAudioLevel(peak, floor: 0.02, ceiling: 0.22)
+        let target = min(1, max(rmsLevel, peakLevel * 0.55))
+        let smoothing = target > voiceLevel ? 0.48 : 0.16
+        voiceLevel = (voiceLevel * (1 - smoothing)) + (target * smoothing)
+
+        let spectrumTarget = VoiceSpectrumAnalyzer.analyze(samples: samples).scaled(by: target)
+        voiceSpectrum = voiceSpectrum.smoothed(toward: spectrumTarget, attack: 0.42, release: 0.18)
+
+        let crossingRate = Double(zeroCrossings) / Double(max(1, samples.count - 1))
+        let brightnessTarget = normalizedAudioLevel(crossingRate, floor: 0.025, ceiling: 0.16)
+        let brightnessSmoothing = brightnessTarget > voiceBrightness ? 0.34 : 0.12
+        let spectralBrightness = voiceSpectrum.brightness
+        let mixedBrightnessTarget = min(1, (brightnessTarget * 0.35) + (spectralBrightness * 0.65))
+        voiceBrightness = (voiceBrightness * (1 - brightnessSmoothing)) + (mixedBrightnessTarget * brightnessSmoothing)
+    }
+
+    private func normalizedAudioLevel(_ value: Double, floor: Double, ceiling: Double) -> Double {
+        guard ceiling > floor else { return 0 }
+        return min(1, max(0, (value - floor) / (ceiling - floor)))
     }
 
     private func syncOverlay() {
@@ -595,13 +930,135 @@ final class AppState: ObservableObject {
             return
         }
 
-        switch runtimeState {
-        case .listening, .speechDetected, .processing, .failed:
-            overlayController.show(appState: self)
-        case .idle, .finished:
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                self?.overlayController.hide()
+        overlayController.show(appState: self)
+
+        if runtimeState == .finished {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+                guard let self, self.runtimeState == .finished else { return }
+                self.runtimeState = .idle
+                self.syncOverlay()
             }
         }
+    }
+
+    private func requestPartialTranscriptionIfNeeded() {
+        guard let model = selectedModel, model.backend == .fluidAudio else { return }
+        guard runtimeState == .speechDetected || runtimeState == .partialTranscription else { return }
+        guard partialTranscriptTask == nil else { return }
+
+        let now = Date()
+        if let lastPartialRequestedAt, now.timeIntervalSince(lastPartialRequestedAt) < 0.8 {
+            return
+        }
+
+        let windowSamples = ringBuffer.readLast(sampleCount: 16_000 * 6)
+        guard windowSamples.count >= 16_000 else { return }
+
+        lastPartialRequestedAt = now
+        let chunkID = partialSequenceNumber
+        partialSequenceNumber += 1
+        let recordingStartedAt = self.recordingStartedAt
+
+        partialTranscriptTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.partialTranscriptTask = nil }
+
+            do {
+                let engine = try await self.preparedEngine(for: model)
+                let result = try await engine.transcribeFinal(
+                    buffer: AudioBuffer(samples: windowSamples, sampleRate: 16_000)
+                )
+                guard !Task.isCancelled else { return }
+                guard self.runtimeState == .speechDetected || self.runtimeState == .partialTranscription else { return }
+
+                let cleanedPartial = RepetitionReducer().process(ASRArtifactCleaner().process(result.text))
+                guard !cleanedPartial.isEmpty else { return }
+
+                let partial = self.partialStabilizer.observe(cleanedPartial, chunkID: chunkID)
+                self.partialTranscript = partial.text
+                self.runtimeState = .partialTranscription
+
+                if self.firstPartialTranscriptAt == nil {
+                    let partialAt = Date()
+                    self.firstPartialTranscriptAt = partialAt
+                    if let recordingStartedAt {
+                        await self.performanceLogger.setFirstPartialLatency(
+                            partialAt.timeIntervalSince(recordingStartedAt)
+                        )
+                    }
+                }
+                self.syncOverlay()
+            } catch {
+                // Partial transcription is best-effort. Final transcription remains authoritative.
+            }
+        }
+    }
+
+    private func logPerformanceRecord(
+        model: ASRModelInfo,
+        profile: ResolvedDictationProfile,
+        audioDuration: TimeInterval,
+        metrics: LatencyMetrics,
+        error: String?
+    ) {
+        let record = PerformanceLogRecord(
+            triggerMode: settings.dictation.triggerMode.rawValue,
+            asrBackend: model.backend.rawValue,
+            modelID: model.id,
+            outputProfile: profile.profile.rawValue,
+            targetAppName: settings.privacy.privacyMode ? nil : profile.targetAppName,
+            targetBundleIdentifier: settings.privacy.privacyMode ? nil : profile.targetBundleIdentifier,
+            streamingMode: model.backend == .fluidAudio ? "pseudoStreaming" : "finalOnly",
+            durationRecorded: audioDuration,
+            metrics: metrics,
+            pasteMethod: metrics.pasteMethod,
+            error: error
+        )
+        try? performanceLogStore.append(record)
+        refreshStorageUsage()
+    }
+
+    private func fluidAudioSupportDirectory() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent("FluidAudio", isDirectory: true)
+    }
+
+    private func byteCount(at url: URL) -> Int64 {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return 0 }
+
+        if !isDirectory.boolValue {
+            return fileByteCount(url)
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            total += fileByteCount(fileURL)
+        }
+        return total
+    }
+
+    private func fileByteCount(_ url: URL) -> Int64 {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]),
+              values.isRegularFile == true
+        else {
+            return 0
+        }
+
+        return Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+    }
+
+    private func lineCount(at url: URL) -> Int {
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return 0 }
+        return data.reduce(0) { count, byte in byte == 0x0A ? count + 1 : count }
     }
 }

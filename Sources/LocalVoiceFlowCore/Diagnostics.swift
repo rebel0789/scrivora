@@ -7,6 +7,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
     public var finalASRToCleanup: TimeInterval?
     public var cleanupToPaste: TimeInterval?
     public var stopSpeakingToInsertedText: TimeInterval?
+    public var firstPartialLatency: TimeInterval?
+    public var pasteMethod: String?
     public var modelLoadTime: TimeInterval?
     public var modelWarmupTime: TimeInterval?
 
@@ -17,6 +19,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         finalASRToCleanup: TimeInterval? = nil,
         cleanupToPaste: TimeInterval? = nil,
         stopSpeakingToInsertedText: TimeInterval? = nil,
+        firstPartialLatency: TimeInterval? = nil,
+        pasteMethod: String? = nil,
         modelLoadTime: TimeInterval? = nil,
         modelWarmupTime: TimeInterval? = nil
     ) {
@@ -26,6 +30,8 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         self.finalASRToCleanup = finalASRToCleanup
         self.cleanupToPaste = cleanupToPaste
         self.stopSpeakingToInsertedText = stopSpeakingToInsertedText
+        self.firstPartialLatency = firstPartialLatency
+        self.pasteMethod = pasteMethod
         self.modelLoadTime = modelLoadTime
         self.modelWarmupTime = modelWarmupTime
     }
@@ -63,6 +69,16 @@ public actor PerformanceLogger {
 
     public func setStopSpeakingToInsertedText(_ value: TimeInterval) {
         current.stopSpeakingToInsertedText = value
+    }
+
+    public func setFirstPartialLatency(_ value: TimeInterval) {
+        if current.firstPartialLatency == nil {
+            current.firstPartialLatency = value
+        }
+    }
+
+    public func setPasteMethod(_ value: String) {
+        current.pasteMethod = value
     }
 
     public func setModelLoadTime(_ value: TimeInterval) {

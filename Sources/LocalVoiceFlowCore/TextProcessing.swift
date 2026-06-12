@@ -10,8 +10,25 @@ public struct CustomReplacement: Codable, Equatable, Sendable {
     }
 
     public static let defaults: [CustomReplacement] = [
-        CustomReplacement(phrase: "local voice flow", replacement: "LocalVoiceFlow")
+        CustomReplacement(phrase: "local voice flow", replacement: "LocalVoiceFlow"),
+        CustomReplacement(phrase: "scrivora", replacement: "Scrivora"),
+        CustomReplacement(phrase: "u i", replacement: "UI"),
+        CustomReplacement(phrase: "ui", replacement: "UI"),
+        CustomReplacement(phrase: "u a", replacement: "UI"),
+        CustomReplacement(phrase: "ua", replacement: "UI"),
+        CustomReplacement(phrase: "text edit", replacement: "TextEdit"),
+        CustomReplacement(phrase: "v s code", replacement: "VS Code")
     ]
+
+    public static func mergingDefaults(with replacements: [CustomReplacement]) -> [CustomReplacement] {
+        let replacementKeys = Set(replacements.map { normalizedPhrase($0.phrase) })
+        let missingDefaults = defaults.filter { !replacementKeys.contains(normalizedPhrase($0.phrase)) }
+        return missingDefaults + replacements
+    }
+
+    private static func normalizedPhrase(_ phrase: String) -> String {
+        phrase.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 public struct UserDictionaryEntry: Codable, Equatable, Sendable {
@@ -52,7 +69,14 @@ public struct DictationCommandProcessor: Sendable {
                 if !output.isEmpty, !output.hasSuffix("\n") {
                     output.append("\n")
                 }
-                output.append("- ")
+                output.append("• ")
+                index += 2
+                continue
+            }
+
+            if let punctuation = punctuation(for: "\(current)-\(next)") {
+                output = output.trimmingCharacters(in: .whitespaces)
+                output.append(punctuation)
                 index += 2
                 continue
             }
@@ -68,7 +92,7 @@ public struct DictationCommandProcessor: Sendable {
             index += 1
         }
 
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.trimmingCharacters(in: .whitespaces)
     }
 
     private func punctuation(for token: String) -> String? {
@@ -76,7 +100,8 @@ public struct DictationCommandProcessor: Sendable {
         case "comma": ","
         case "period", "fullstop", "full-stop": "."
         case "questionmark", "question-mark": "?"
-        case "exclamationmark", "exclamation-point", "exclamationpoint": "!"
+        case "exclamationmark", "exclamation-mark", "exclamation-point", "exclamationpoint": "!"
+        case "escalationmark", "escalation-mark", "exclaimationmark", "exclaimation-mark": "!"
         case "colon": ":"
         case "semicolon": ";"
         default: nil
@@ -95,7 +120,7 @@ public struct DictationCommandProcessor: Sendable {
     }
 
     private func appendWord(_ word: String, to output: inout String) {
-        if output.isEmpty || output.hasSuffix("\n") || output.hasSuffix("- ") {
+        if output.isEmpty || output.hasSuffix("\n") || output.hasSuffix("- ") || output.hasSuffix("• ") {
             output.append(word)
         } else {
             output.append(" ")
@@ -147,21 +172,28 @@ public struct UserDictionaryProcessor: Sendable {
 public struct FastTextFormatter: Sendable {
     public init() {}
 
-    public func format(_ input: String) -> String {
+    public func format(
+        _ input: String,
+        forceFinalPunctuation: Bool = true,
+        capitalizeSentenceStarts shouldCapitalizeSentenceStarts: Bool = true
+    ) -> String {
         var text = input
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespaces)
 
         text = regexReplace("[ \\t]+", in: text, with: " ")
         text = regexReplace(" +\\n", in: text, with: "\n")
         text = regexReplace("\\n +", in: text, with: "\n")
+        text = regexReplace("\\n{3,}", in: text, with: "\n\n")
         text = regexReplace(" +([,.;:!?])", in: text, with: "$1")
         text = regexReplace("([\\(\\[\\{]) +", in: text, with: "$1")
         text = regexReplace(" +([\\)\\]\\}])", in: text, with: "$1")
-        text = capitalizeSentenceStarts(text)
+        if shouldCapitalizeSentenceStarts {
+            text = capitalizeSentenceStarts(text)
+        }
 
-        if let last = text.last, !".!?;:\n".contains(last) {
+        if forceFinalPunctuation, let last = text.last, !isBulletList(text), !".!?;:\n".contains(last) {
             text.append(".")
         }
 
@@ -170,6 +202,12 @@ public struct FastTextFormatter: Sendable {
 
     private func regexReplace(_ pattern: String, in text: String, with replacement: String) -> String {
         text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+    }
+
+    private func isBulletList(_ text: String) -> Bool {
+        text.split(separator: "\n").contains { line in
+            line.trimmingCharacters(in: .whitespaces).hasPrefix("• ")
+        }
     }
 
     private func capitalizeSentenceStarts(_ text: String) -> String {
@@ -220,9 +258,101 @@ public struct NonSpeechArtifactFilter: Sendable {
         text = regexReplace("(?i)<\\|[^>]+\\|>", in: text, with: " ")
         text = regexReplace("(?i)\\[(?:\(artifactPattern))\\]", in: text, with: " ")
         text = regexReplace("(?i)\\((?:\(artifactPattern))\\)", in: text, with: " ")
+        text = regexReplace("(?i)\\b(?:\(artifactPattern))\\b[.!?,;:]*", in: text, with: " ")
         text = regexReplace("[ \\t]+", in: text, with: " ")
         text = regexReplace(" *\\n *", in: text, with: "\n")
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func regexReplace(_ pattern: String, in text: String, with replacement: String) -> String {
+        text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+    }
+}
+
+public typealias ASRArtifactCleaner = NonSpeechArtifactFilter
+
+public struct FillerWordFilter: Sendable {
+    public init() {}
+
+    public func process(_ input: String) -> String {
+        var text = input
+        let fillerPattern = "\\b(?:uh+|um+|ah+|a+h+|er+m*|hmm+|mm+)\\b[,.!?;:]*"
+        text = regexReplace("(?i)\(fillerPattern)", in: text, with: " ")
+        text = regexReplace("[ \\t]{2,}", in: text, with: " ")
+        text = regexReplace(" *\\n *", in: text, with: "\n")
+        text = regexReplace("\\s+([,.;:!?])", in: text, with: "$1")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func regexReplace(_ pattern: String, in text: String, with replacement: String) -> String {
+        text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+    }
+}
+
+public struct RepetitionReducer: Sendable {
+    public init() {}
+
+    public func process(_ input: String) -> String {
+        let tokens = input.split { $0.isWhitespace }.map(String.init)
+        guard tokens.count > 1 else { return input.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        var reduced: [String] = []
+        for token in tokens {
+            if let previous = reduced.last, normalized(previous) == normalized(token) {
+                continue
+            }
+            reduced.append(token)
+        }
+
+        return reduceRepeatedPhrases(reduced).joined(separator: " ")
+    }
+
+    private func reduceRepeatedPhrases(_ tokens: [String]) -> [String] {
+        var output: [String] = []
+        var index = 0
+
+        while index < tokens.count {
+            var skipped = false
+            let maxLength = min(6, (tokens.count - index) / 2)
+            if maxLength > 0 {
+                for length in stride(from: maxLength, through: 2, by: -1) {
+                    let first = tokens[index..<(index + length)].map(normalized)
+                    let second = tokens[(index + length)..<(index + length * 2)].map(normalized)
+                    if first == second {
+                        output.append(contentsOf: tokens[index..<(index + length)])
+                        index += length * 2
+                        skipped = true
+                        break
+                    }
+                }
+            }
+            if !skipped {
+                output.append(tokens[index])
+                index += 1
+            }
+        }
+
+        return output
+    }
+
+    private func normalized(_ token: String) -> String {
+        token.lowercased().trimmingCharacters(in: .punctuationCharacters)
+    }
+}
+
+public typealias PunctuationHeuristicFormatter = FastTextFormatter
+
+public struct FinalTextNormalizer: Sendable {
+    public init() {}
+
+    public func process(_ input: String) -> String {
+        var text = input
+        text = regexReplace("[ \\t]+", in: text, with: " ")
+        text = regexReplace(" *\\n *", in: text, with: "\n")
+        text = regexReplace("\\n{3,}", in: text, with: "\n\n")
+        text = regexReplace("([,.;:!?])([^\\s\\n])", in: text, with: "$1 $2")
+        text = regexReplace(" +([,.;:!?])", in: text, with: "$1")
+        return text.trimmingCharacters(in: .whitespaces)
     }
 
     private func regexReplace(_ pattern: String, in text: String, with replacement: String) -> String {
@@ -234,27 +364,88 @@ public struct TextPostProcessor: Sendable {
     private let commandProcessor: DictationCommandProcessor
     private let formatter: FastTextFormatter
     private let artifactFilter: NonSpeechArtifactFilter
+    private let fillerFilter: FillerWordFilter
+    private let repetitionReducer: RepetitionReducer
+    private let finalNormalizer: FinalTextNormalizer
 
     public init(
         commandProcessor: DictationCommandProcessor = DictationCommandProcessor(),
         formatter: FastTextFormatter = FastTextFormatter(),
-        artifactFilter: NonSpeechArtifactFilter = NonSpeechArtifactFilter()
+        artifactFilter: NonSpeechArtifactFilter = NonSpeechArtifactFilter(),
+        fillerFilter: FillerWordFilter = FillerWordFilter(),
+        repetitionReducer: RepetitionReducer = RepetitionReducer(),
+        finalNormalizer: FinalTextNormalizer = FinalTextNormalizer()
     ) {
         self.commandProcessor = commandProcessor
         self.formatter = formatter
         self.artifactFilter = artifactFilter
+        self.fillerFilter = fillerFilter
+        self.repetitionReducer = repetitionReducer
+        self.finalNormalizer = finalNormalizer
     }
 
     public func process(_ input: String, settings: PostProcessingSettings) -> String {
+        process(input, settings: settings, profile: settings.outputProfile == .automatic ? .general : settings.outputProfile)
+    }
+
+    public func process(
+        _ input: String,
+        settings: PostProcessingSettings,
+        profile: DictationOutputProfile
+    ) -> String {
         var text = artifactFilter.process(input)
 
-        if settings.cleanupMode != .raw {
+        if settings.cleanupMode != .raw, profile != .raw {
+            text = fillerFilter.process(text)
+            text = repetitionReducer.process(text)
             text = commandProcessor.process(text)
-            text = CustomReplacementProcessor(replacements: settings.customReplacements).process(text)
+            text = CustomReplacementProcessor(
+                replacements: CustomReplacement.mergingDefaults(with: profileSpecificReplacements(profile) + settings.customReplacements)
+            ).process(text)
             text = UserDictionaryProcessor(entries: settings.userDictionary).process(text)
-            text = formatter.format(text)
+            text = formatter.format(
+                text,
+                forceFinalPunctuation: shouldForceFinalPunctuation(profile: profile, preset: settings.preset),
+                capitalizeSentenceStarts: shouldCapitalizeSentenceStarts(profile: profile)
+            )
+            text = finalNormalizer.process(text)
         }
 
         return text
+    }
+
+    private func shouldForceFinalPunctuation(
+        profile: DictationOutputProfile,
+        preset: PostProcessingPreset
+    ) -> Bool {
+        switch profile {
+        case .pragmatic, .raw:
+            return false
+        case .automatic:
+            return preset != .codeComments
+        case .general, .agent, .email:
+            return true
+        }
+    }
+
+    private func shouldCapitalizeSentenceStarts(profile: DictationOutputProfile) -> Bool {
+        switch profile {
+        case .pragmatic, .raw:
+            return false
+        case .automatic, .general, .agent, .email:
+            return true
+        }
+    }
+
+    private func profileSpecificReplacements(_ profile: DictationOutputProfile) -> [CustomReplacement] {
+        switch profile {
+        case .pragmatic:
+            return [
+                CustomReplacement(phrase: "u r", replacement: "UI"),
+                CustomReplacement(phrase: "ur", replacement: "UI")
+            ]
+        case .automatic, .general, .agent, .email, .raw:
+            return []
+        }
     }
 }

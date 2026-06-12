@@ -10,18 +10,39 @@ final class HotkeyManager: @unchecked Sendable {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var controlTapStartedAt: CFAbsoluteTime?
     private var controlTapInvalidated = false
-    private var handler: (() -> Void)?
+    private var controlHoldActivated = false
+    private var lastControlTapEndedAt: CFAbsoluteTime?
+    private var holdWorkItem: DispatchWorkItem?
+    private var triggerMode: TriggerMode = .globalShortcut
+    private var holdThreshold: CFTimeInterval = 0.15
+    private var doubleTapInterval: CFTimeInterval = 0.32
+    private var onToggle: (() -> Void)?
+    private var onStart: (() -> Void)?
+    private var onStop: (() -> Void)?
     private let maximumControlTapDuration: CFTimeInterval = 0.7
 
     deinit {
         unregister()
     }
 
-    func register(shortcut: GlobalShortcut, handler: @escaping () -> Void) throws {
+    func register(
+        shortcut: GlobalShortcut,
+        triggerMode: TriggerMode,
+        holdThresholdMilliseconds: Int,
+        doubleTapIntervalMilliseconds: Int,
+        onToggle: @escaping () -> Void,
+        onStart: @escaping () -> Void,
+        onStop: @escaping () -> Void
+    ) throws {
         unregister()
-        self.handler = handler
+        self.triggerMode = triggerMode
+        self.holdThreshold = CFTimeInterval(max(80, holdThresholdMilliseconds)) / 1000
+        self.doubleTapInterval = CFTimeInterval(max(150, doubleTapIntervalMilliseconds)) / 1000
+        self.onToggle = onToggle
+        self.onStart = onStart
+        self.onStop = onStop
 
-        if shortcut.isControlTap {
+        if triggerMode != .globalShortcut || shortcut.isControlTap {
             try registerControlTap()
             return
         }
@@ -71,12 +92,24 @@ final class HotkeyManager: @unchecked Sendable {
             CGEvent.tapEnable(tap: eventTap, enable: false)
             self.eventTap = nil
         }
+        holdWorkItem?.cancel()
+        holdWorkItem = nil
         controlTapStartedAt = nil
         controlTapInvalidated = false
+        controlHoldActivated = false
+        lastControlTapEndedAt = nil
     }
 
-    fileprivate func fire() {
-        handler?()
+    fileprivate func fireToggle() {
+        onToggle?()
+    }
+
+    private func fireStart() {
+        onStart?()
+    }
+
+    private func fireStop() {
+        onStop?()
     }
 
     fileprivate func handleEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -90,9 +123,10 @@ final class HotkeyManager: @unchecked Sendable {
         switch type {
         case .flagsChanged:
             handleFlagsChanged(event)
-        case .keyDown:
+        case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel:
             if controlTapStartedAt != nil {
                 controlTapInvalidated = true
+                holdWorkItem?.cancel()
             }
         default:
             break
@@ -104,7 +138,11 @@ final class HotkeyManager: @unchecked Sendable {
     private func registerControlTap() throws {
         let eventMask =
             (1 << CGEventType.flagsChanged.rawValue) |
-            (1 << CGEventType.keyDown.rawValue)
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue) |
+            (1 << CGEventType.scrollWheel.rawValue)
         let selfPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
         guard let tap = CGEvent.tapCreate(
@@ -115,7 +153,7 @@ final class HotkeyManager: @unchecked Sendable {
             callback: controlTapEventHandler,
             userInfo: selfPointer
         ) else {
-            throw LocalVoiceFlowError.insertionFailed("Unable to register Control Tap. Grant Accessibility permission and restart LocalVoiceFlow.")
+            throw LocalVoiceFlowError.insertionFailed("Unable to register Control trigger. Grant Accessibility permission and restart Scrivora.")
         }
 
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
@@ -144,19 +182,61 @@ final class HotkeyManager: @unchecked Sendable {
         if controlIsDown, controlTapStartedAt == nil {
             controlTapStartedAt = CFAbsoluteTimeGetCurrent()
             controlTapInvalidated = hasOtherShortcutModifiers(flags)
+            controlHoldActivated = false
+            scheduleHoldStartIfNeeded(startedAt: controlTapStartedAt)
             return
         }
 
         if !controlIsDown, let startedAt = controlTapStartedAt {
+            holdWorkItem?.cancel()
             let duration = CFAbsoluteTimeGetCurrent() - startedAt
-            let shouldFire = !controlTapInvalidated && duration <= maximumControlTapDuration
+            let endedAt = CFAbsoluteTimeGetCurrent()
+            let shouldFireTap = !controlTapInvalidated && duration <= maximumControlTapDuration
+            let shouldStopHold = triggerMode == .holdControl && controlHoldActivated
             controlTapStartedAt = nil
             controlTapInvalidated = false
-            if shouldFire {
-                DispatchQueue.main.async { [weak self] in
-                    self?.fire()
-                }
+            controlHoldActivated = false
+
+            if shouldStopHold {
+                DispatchQueue.main.async { [weak self] in self?.fireStop() }
+                return
             }
+
+            if triggerMode == .doubleTapControl, shouldFireTap {
+                handleDoubleTap(endedAt: endedAt)
+                return
+            }
+
+            if triggerMode == .globalShortcut, shouldFireTap {
+                DispatchQueue.main.async { [weak self] in self?.fireToggle() }
+            }
+        }
+    }
+
+    private func scheduleHoldStartIfNeeded(startedAt: CFAbsoluteTime?) {
+        guard triggerMode == .holdControl, let startedAt else { return }
+        holdWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.triggerMode == .holdControl,
+                  self.controlTapStartedAt == startedAt,
+                  !self.controlTapInvalidated,
+                  !self.controlHoldActivated
+            else { return }
+
+            self.controlHoldActivated = true
+            self.fireStart()
+        }
+        holdWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: workItem)
+    }
+
+    private func handleDoubleTap(endedAt: CFAbsoluteTime) {
+        if let lastControlTapEndedAt, endedAt - lastControlTapEndedAt <= doubleTapInterval {
+            self.lastControlTapEndedAt = nil
+            DispatchQueue.main.async { [weak self] in self?.fireToggle() }
+        } else {
+            lastControlTapEndedAt = endedAt
         }
     }
 
@@ -174,7 +254,7 @@ private let hotKeyEventHandler: EventHandlerUPP = { _, _, userData in
     DispatchQueue.main.async {
         guard let pointer = UnsafeRawPointer(bitPattern: rawPointer) else { return }
         let manager = Unmanaged<HotkeyManager>.fromOpaque(pointer).takeUnretainedValue()
-        manager.fire()
+        manager.fireToggle()
     }
     return noErr
 }

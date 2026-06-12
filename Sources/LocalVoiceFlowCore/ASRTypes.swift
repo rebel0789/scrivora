@@ -96,11 +96,21 @@ public struct ASRModelInfo: Identifiable, Codable, Equatable, Sendable {
 
 public struct ASRPartialResult: Equatable, Sendable {
     public var text: String
+    public var stableText: String
+    public var unstableText: String
     public var chunkID: Int
     public var isStable: Bool
 
-    public init(text: String, chunkID: Int, isStable: Bool) {
+    public init(
+        text: String,
+        stableText: String = "",
+        unstableText: String = "",
+        chunkID: Int,
+        isStable: Bool
+    ) {
         self.text = text
+        self.stableText = stableText
+        self.unstableText = unstableText
         self.chunkID = chunkID
         self.isStable = isStable
     }
@@ -129,4 +139,17 @@ public protocol ASREngine: Sendable {
     func transcribe(chunk: AudioChunk) async throws -> ASRPartialResult
     func transcribeFinal(buffer: AudioBuffer) async throws -> ASRResult
     func unload() async
+}
+
+public protocol StreamingASREngine: Sendable {
+    var isLoaded: Bool { get async }
+    var modelInfo: ASRModelInfo? { get async }
+
+    func loadModel(_ model: ASRModelInfo) async throws
+    func warmup() async throws
+    func startSession() async throws
+    func acceptAudioFrame(_ frame: AudioChunk) async throws
+    func getPartialResult() async throws -> ASRPartialResult?
+    func finishSession() async throws -> ASRResult
+    func resetSession() async
 }

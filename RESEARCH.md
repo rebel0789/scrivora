@@ -1,6 +1,8 @@
-# LocalVoiceFlow Research
+# Scrivora Research
 
 Research date: 2026-06-11
+
+V0.2 update: the public product name is Scrivora. The repo path and Swift modules still use `LocalVoiceFlow` internally. Scrivora now defaults to FluidAudio Parakeet V2 for Instant mode, keeps whisper.cpp server/CLI as fallback paths, and implements pseudo-streaming Parakeet partials. True FluidAudio streaming/EOU remains the next ASR research target.
 
 LocalVoiceFlow should start with a local Whisper-family ASR path because it is the most mature option for an offline macOS dictation product. The best first production backend is WhisperKit, with whisper.cpp kept as the fallback and portability backend. That is a deliberate adjustment from a pure whisper.cpp-first plan: whisper.cpp is excellent and mature, but WhisperKit now gives a Swift package, Apple-first Core ML deployment, model selection, microphone streaming CLI examples, and a lower-friction route to a native macOS app.
 

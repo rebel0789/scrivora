@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/.build/LocalVoiceFlowApp.app"
+APP="$ROOT/.build/Scrivora.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 SIGNING_DIR="$HOME/Library/Application Support/LocalVoiceFlow/Signing"
@@ -27,19 +27,19 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key>
   <string>app.localvoiceflow.mvp</string>
   <key>CFBundleName</key>
-  <string>LocalVoiceFlow</string>
+  <string>Scrivora</string>
   <key>CFBundleDisplayName</key>
-  <string>LocalVoiceFlow</string>
+  <string>Scrivora</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.2.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>LocalVoiceFlow records microphone audio to transcribe speech locally on this Mac.</string>
+  <string>Scrivora records microphone audio to transcribe speech locally on this Mac.</string>
 </dict>
 </plist>
 PLIST

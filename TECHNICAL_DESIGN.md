@@ -1,25 +1,27 @@
-# LocalVoiceFlow Technical Design
+# Scrivora Technical Design
 
 ## Architecture
 
-LocalVoiceFlow is split into a pure Swift core library and a macOS SwiftUI app target.
+Scrivora is split into a pure Swift core library and a macOS SwiftUI app target.
 
 - `LocalVoiceFlowCore`: pipeline logic, model metadata, settings/history stores, text cleanup, diagnostics, ASR/LLM protocols, and testable algorithms.
 - `LocalVoiceFlowApp`: SwiftUI menu bar app, AppKit permission and insertion services, AVAudioEngine capture, global hotkey registration, and views.
+
+The public product name is Scrivora. Swift target and module names remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.2 to avoid a risky internal rename while preserving the working app.
 
 This keeps model/runtime-specific code behind protocols and keeps most behavior testable with `swift test`.
 
 ## Pipeline
 
 ```text
-Hotkey
+Trigger mode
 -> AudioCaptureService
 -> AudioConverter16kMono
 -> AudioRingBuffer
 -> VoiceActivityDetector
 -> SilenceDetector
 -> ChunkScheduler
--> ASREngine
+-> ASREngine or pseudo-streaming Parakeet partial loop
 -> PartialTranscriptStabilizer
 -> FinalTranscriptBuilder
 -> TextPostProcessor
@@ -39,7 +41,7 @@ Hotkey
 - `isLoaded`
 - `modelInfo`
 
-The first production backend should be `WhisperKitASREngine` in the app layer once full Xcode is available. The initial codebase also includes a local command engine boundary for whisper.cpp-compatible testing without hard-wiring a cloud dependency.
+V0.2 default is FluidAudio Parakeet V2 in-process batch ASR with pseudo-streaming partials. Persistent `whisper-server` remains compatible fallback and `whisper-cli` remains emergency fallback. True streaming/EOU should be implemented through FluidAudio streaming APIs when benchmarked and stable.
 
 ## LLM Boundary
 
@@ -50,6 +52,8 @@ The first production backend should be `WhisperKitASREngine` in the app layer on
 Use local JSON files under:
 
 `~/Library/Application Support/LocalVoiceFlow`
+
+This storage path remains unchanged in V0.2 so existing settings, history, and downloaded whisper.cpp models are preserved during the public rename to Scrivora.
 
 Subfolders:
 
@@ -78,6 +82,7 @@ The default MVP should prefer reliability over aggressive direct insertion becau
 - Microphone: request through AVFoundation capture authorization.
 - Accessibility: check `AXIsProcessTrustedWithOptions`; show recovery action that opens System Settings.
 - Hotkeys: register through Carbon global hotkey APIs for the MVP.
+- Control triggers: register through a listen-only CGEvent tap and require Accessibility permission.
 
 ## Performance Metrics
 
@@ -91,6 +96,10 @@ Record:
 - Total stop-speaking to inserted text.
 - Model load time.
 - Model warmup time.
+- First partial latency.
+- Paste method.
+
+One JSONL record per dictation is appended to `Logs/dictation-performance.jsonl`. Transcript text is not logged.
 
 Metrics are kept local and surfaced in the debug/performance view.
 
@@ -124,4 +133,3 @@ Manual:
 - Confirm clipboard restoration.
 - Toggle privacy mode and verify history does not grow.
 - Disconnect network after model download and verify dictation still works.
-

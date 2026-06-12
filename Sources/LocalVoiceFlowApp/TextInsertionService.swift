@@ -13,15 +13,29 @@ private enum TextInsertionError: LocalizedError {
     }
 }
 
+enum TextInsertionMethod: String {
+    case copiedOnly
+    case clipboardPaste
+}
+
+struct TextInsertionResult {
+    var method: TextInsertionMethod
+    var restoredClipboard: Bool
+}
+
 @MainActor
 final class TextInsertionService {
     func insertText(
         _ text: String,
         targetApplication: NSRunningApplication?,
         autoPaste: Bool,
-        restoreClipboard: Bool
-    ) async throws {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        restoreClipboard: Bool,
+        restoreDelayMilliseconds: Int
+    ) async throws -> TextInsertionResult {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false)
+        }
+        let snapshot = ClipboardSnapshot.capture()
         copyToClipboard(text)
 
         if autoPaste, let targetApplication, targetApplication.processIdentifier != NSRunningApplication.current.processIdentifier {
@@ -31,7 +45,7 @@ final class TextInsertionService {
 
         let accessibilityTrusted = AXIsProcessTrusted()
         guard autoPaste else {
-            return
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false)
         }
 
         guard accessibilityTrusted else {
@@ -39,10 +53,15 @@ final class TextInsertionService {
         }
 
         sendCommandV()
+        var restored = false
+        if restoreClipboard, let snapshot {
+            let delay = max(0, restoreDelayMilliseconds)
+            try await Task.sleep(for: .milliseconds(delay))
+            snapshot.restore()
+            restored = true
+        }
 
-        // Keep the transcript on the clipboard even when auto-paste is enabled.
-        // This guarantees a manual Cmd+V fallback when the focused app rejects synthetic paste.
-        _ = restoreClipboard
+        return TextInsertionResult(method: .clipboardPaste, restoredClipboard: restored)
     }
 
     private func copyToClipboard(_ text: String) {
@@ -59,5 +78,34 @@ final class TextInsertionService {
         keyUp?.flags = .maskCommand
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
+    }
+}
+
+private struct ClipboardSnapshot {
+    var items: [NSPasteboardItem]
+
+    static func capture() -> ClipboardSnapshot? {
+        let pasteboard = NSPasteboard.general
+        guard let existingItems = pasteboard.pasteboardItems, !existingItems.isEmpty else {
+            return nil
+        }
+
+        let copies = existingItems.map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+
+        return ClipboardSnapshot(items: copies)
+    }
+
+    func restore() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(items)
     }
 }

@@ -1,6 +1,10 @@
-# LocalVoiceFlow Context Tree
+# Scrivora Context Tree
 
 Last updated: 2026-06-12
+
+Public product name: Scrivora. Repo path remains `/Users/rebel/Documents/wishperflow`. Swift targets/modules remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` for V0.2.
+
+Current V0.2 default: Parakeet V2 English, Fast deterministic cleanup, Hold Control trigger. Fallbacks preserved: persistent `whisper-server`, `whisper-cli`, and batch Parakeet V2/V3. Partial overlay is pseudo-streaming through throttled rolling-window Parakeet batch calls; true FluidAudio streaming/EOU is not yet implemented.
 
 Purpose: keep product, architecture, ASR, UX, and competitor research in one map so future implementation does not drift into random features before the core dictation loop is excellent.
 
@@ -13,7 +17,7 @@ Primary external reference reviewed:
 
 ## North Star
 
-LocalVoiceFlow should feel like an instant local macOS dictation tool:
+Scrivora should feel like an instant local macOS dictation tool:
 
 ```text
 shortcut

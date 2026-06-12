@@ -1,6 +1,18 @@
-# LocalVoiceFlow Audit
+# Scrivora Audit
 
 Audit date: 2026-06-12
+
+Public product name: Scrivora.
+
+Internal Swift target/module names still use `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.2. The bundle executable also remains `LocalVoiceFlowApp`. This avoids a risky internal rename while preserving the working MVP.
+
+Current bundle ID: `app.localvoiceflow.mvp`.
+
+Current signing identity: `LocalVoiceFlow Development`.
+
+Current install path: `/Applications/Scrivora.app`.
+
+Existing macOS permissions should remain attached to the signed app identity because the bundle ID and signing identity were preserved. If macOS still shows the old display name in System Settings, remove the old entry and grant permissions to `/Applications/Scrivora.app`.
 
 ## Verification Commands
 
@@ -14,9 +26,9 @@ Scripts/package_app_bundle.sh
 
 Results:
 
-- `swift test`: passed, 24 tests.
+- `swift test`: passed, 27 tests after V0.2 cleanup/stabilizer/default-model updates.
 - `swift build --product LocalVoiceFlowApp`: passed. `Package.swift` and `Package.resolved` point at `https://github.com/FluidInference/FluidAudio.git` version `0.15.2`. The official GitHub dependency fetch stalled in this local session, so the workspace uses an ignored SwiftPM mirror at `Vendor/FluidAudio`; this replaces the earlier broken `/tmp/FluidAudio` mirror.
-- `Scripts/package_app_bundle.sh`: passed and produced `.build/LocalVoiceFlowApp.app`, signed with `LocalVoiceFlow Development`.
+- `Scripts/package_app_bundle.sh`: passed and now produces `.build/Scrivora.app`, signed with `LocalVoiceFlow Development`.
 
 Additional real ASR verification:
 
@@ -71,7 +83,11 @@ Results:
 - Parakeet models can be downloaded from the app settings or through `Scripts/download_fluidaudio_model.sh`.
 - Interrupted Parakeet downloads are now detected and retried by removing incomplete FluidAudio cache directories before download.
 - Audio ring buffer, VAD, silence detector, chunk scheduler, text cleanup, history/settings storage, and model defaults are covered by tests.
-- The default selected ASR model now points to an implemented whisper.cpp backend instead of the unimplemented WhisperKit path.
+- The default selected ASR model now points to Parakeet V2 English for Instant mode.
+- Hold Control and Double-tap Control trigger modes are implemented while preserving the global shortcut path.
+- Parakeet pseudo-streaming partials are implemented on a throttled rolling in-memory audio window. True FluidAudio streaming/EOU is still future work.
+- Deterministic cleanup now includes artifact removal, repetition reduction, dictation commands, punctuation formatting, user dictionary replacements, and final normalization.
+- Performance logs are appended locally to `Logs/dictation-performance.jsonl` without transcript text.
 
 ## What Is Partially Working
 
@@ -82,7 +98,7 @@ Results:
 - Clipboard paste fallback exists, but Notes/TextEdit/Chrome paste behavior must be manually verified with Accessibility permission granted.
 - Accessibility permission prompting is implemented with `AXIsProcessTrustedWithOptions`, but the app does not yet deep-link to settings from the visible UI.
 - Direct accessibility insertion is best-effort and may fail for many text fields; clipboard paste remains the practical insertion path.
-- FluidAudio Parakeet is final/batch only. It improves final ASR latency and removes temp WAV for that path, but it does not yet provide streaming partials in the overlay.
+- FluidAudio Parakeet pseudo-streaming partials are implemented, but they are rolling-window batch partials, not true streaming/EOU.
 
 ## What Is Mocked
 
@@ -107,16 +123,16 @@ Results:
 - Interactive microphone permission and Accessibility permission grants require user action.
 - Global hotkey behavior outside the app still needs a live app/manual test.
 - Paste into Notes/TextEdit/Chrome still needs manual verification after Accessibility is granted.
-- Partial transcription is not truly implemented. The command and server engines return final text only; `transcribe(chunk:)` still returns empty partials.
+- True streaming partial transcription is not implemented. The command and server engines return final text only; Parakeet partials are pseudo-streaming rolling-window batch calls.
 - The whisper.cpp fallback still writes a temporary WAV before final ASR. The FluidAudio Parakeet path does not.
 - The persistent helper is local-only but still an HTTP server bound to `127.0.0.1`; this is acceptable for MVP latency, but production should harden lifecycle, port selection, and failure recovery.
 - FluidAudio increases build size/time because SwiftPM compiles the full package, not just ASR.
 
 ## Exact Fixes Needed Next
 
-Priority fixes already implemented:
+Priority fixes implemented:
 
-- Default ASR now uses `whispercpp-base-en-q5`.
+- Default ASR now uses `fluidaudio-parakeet-v2`.
 - Added explicit model path storage.
 - Added model runtime fields for `whisper-cli`, `whisper-server`, and persistent-server preference.
 - Added `Scripts/download_whisper_model.sh`.
@@ -127,7 +143,10 @@ Priority fixes already implemented:
 - Cached the loaded ASR engine across dictations.
 - Added real local Whisper integration tests.
 - Added FluidAudio benchmark support to `Scripts/benchmark_asr.py`.
-- Added timing metrics for hotkey-to-recording and recording-to-speech.
+- Added timing metrics for hotkey-to-recording, recording-to-speech, first partial, final ASR, cleanup, paste, and total stop-to-inserted text.
+- Added Scrivora public app naming while keeping internal target names unchanged.
+- Added `.build/Scrivora.app` packaging and `/Applications/Scrivora.app` install path.
+- Added `BENCHMARKS_LOCAL.md` and `PASTE_QA.md`.
 
 Remaining exact fixes:
 

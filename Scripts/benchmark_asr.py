@@ -153,7 +153,33 @@ def default_fluidaudio_model_dir(version: str) -> Path:
 
 
 def extract_fluidaudio_transcript(stdout: str) -> str:
-    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    stdout = re.sub(
+        r"E5RT encountered.*?zero shape error\.?",
+        "",
+        stdout,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    def is_noise(line: str) -> bool:
+        lowered = line.lower()
+        noise_fragments = [
+            "e5rt encountered",
+            "failed to propagateinputtensorshapes",
+            "zero shape error",
+            "processing time:",
+            "audio duration:",
+            "rtfx:",
+            "confidence:",
+            "loading model",
+            "loaded model",
+        ]
+        return any(fragment in lowered for fragment in noise_fragments)
+
+    lines = [
+        line.strip()
+        for line in stdout.splitlines()
+        if line.strip() and not is_noise(line.strip())
+    ]
     return lines[-1] if lines else ""
 
 
@@ -207,19 +233,25 @@ def candidate_engines(args) -> list[dict]:
             or shutil.which("fluidaudiocli")
             or ("/tmp/FluidAudio/.build/debug/fluidaudiocli" if Path("/tmp/FluidAudio/.build/debug/fluidaudiocli").is_file() else None)
         )
-        model_dir = Path(args.fluidaudio_model_dir).expanduser() if args.fluidaudio_model_dir else default_fluidaudio_model_dir(args.fluidaudio_model_version)
         if not fluidaudio_cli or not Path(fluidaudio_cli).is_file():
             print("skip fluidaudio: pass --fluidaudio-cli or build fluidaudiocli", file=sys.stderr)
-        elif not model_dir.exists():
-            print(f"skip fluidaudio:{args.fluidaudio_model_version} missing {model_dir}", file=sys.stderr)
         else:
-            engines.append({
-                "name": f"fluidaudio:{args.fluidaudio_model_version}",
-                "kind": "fluidaudio",
-                "cli": fluidaudio_cli,
-                "model_version": args.fluidaudio_model_version,
-                "model_dir": model_dir,
-            })
+            for model_version in args.fluidaudio_model_version:
+                model_dir = (
+                    Path(args.fluidaudio_model_dir).expanduser()
+                    if args.fluidaudio_model_dir and len(args.fluidaudio_model_version) == 1
+                    else default_fluidaudio_model_dir(model_version)
+                )
+                if not model_dir.exists():
+                    print(f"skip fluidaudio:{model_version} missing {model_dir}", file=sys.stderr)
+                    continue
+                engines.append({
+                    "name": f"fluidaudio:{model_version}",
+                    "kind": "fluidaudio",
+                    "cli": fluidaudio_cli,
+                    "model_version": model_version,
+                    "model_dir": model_dir,
+                })
 
     return engines
 
@@ -243,12 +275,19 @@ def main() -> int:
     )
     parser.add_argument("--include-fluidaudio", action="store_true")
     parser.add_argument("--fluidaudio-cli")
-    parser.add_argument("--fluidaudio-model-version", default="v3", choices=["v2", "v3", "110m"])
+    parser.add_argument(
+        "--fluidaudio-model-version",
+        action="append",
+        choices=["v2", "v3", "110m"],
+        help="FluidAudio model version to test. Repeatable; defaults to v3.",
+    )
     parser.add_argument("--fluidaudio-model-dir")
     args = parser.parse_args()
 
     if not args.whisper_model:
         args.whisper_model = ["ggml-base.en-q5_1.bin", "ggml-small.en-q5_1.bin"]
+    if not args.fluidaudio_model_version:
+        args.fluidaudio_model_version = ["v3"]
 
     samples = load_manifest(Path(args.manifest).expanduser())
     engines = candidate_engines(args)

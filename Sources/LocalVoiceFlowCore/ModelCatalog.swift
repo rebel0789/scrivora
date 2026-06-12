@@ -63,7 +63,7 @@ public struct ModelCatalog: Sendable {
             ),
             ASRModelInfo(
                 id: "fluidaudio-parakeet-v3",
-                mode: .accurate,
+                mode: .balanced,
                 displayName: "Parakeet V3",
                 backend: .fluidAudio,
                 engineIdentifier: "parakeet-tdt-0.6b-v3",
@@ -77,7 +77,7 @@ public struct ModelCatalog: Sendable {
             ),
             ASRModelInfo(
                 id: "fluidaudio-parakeet-v2",
-                mode: .highestQuality,
+                mode: .instant,
                 displayName: "Parakeet V2 English",
                 backend: .fluidAudio,
                 engineIdentifier: "parakeet-tdt-0.6b-v2",

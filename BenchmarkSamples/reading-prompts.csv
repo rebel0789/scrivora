@@ -1,0 +1,11 @@
+id,profile,reference
+coding-01,pragmatic,"check the permissions state before starting dictation and keep the UI responsive"
+coding-02,pragmatic,"add a guard for empty transcript and return early without changing the clipboard"
+agent-01,agent,"summarize the bug, list the exact file paths, and ask me for one manual test"
+agent-02,agent,"make the next answer short, direct, and focused on what changed"
+email-01,email,"Hi Alex, I tested the build this morning and the local dictation flow is working much better."
+email-02,email,"Can you send the notes from yesterday's meeting when you get a minute?"
+general-01,general,"Scrivora should work in Notes, Chrome, TextEdit, and coding apps without sending audio to the cloud."
+general-02,general,"The model should ignore silence markers and avoid repeating the same phrase twice."
+accent-01,general,"I am speaking naturally with my own accent, some pauses, and a little background noise."
+accent-02,general,"This is the sentence we will use to compare Parakeet V2, Parakeet V3, and whisper.cpp."
