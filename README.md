@@ -6,13 +6,29 @@ The app records microphone audio, transcribes it locally, cleans the text, and
 pastes the result into the focused app. Core dictation is designed to work
 without a cloud speech API.
 
-> Status: private GitHub release staging is active at
-> `https://github.com/rebel0789/scrivora`. The source tree is prepared for
-> review; the public license decision, clean-clone check, and Developer ID
-> signing/notarization remain release gates for a public Mac download. See
-> `RELEASE_STATUS.md`.
+Scrivora is open-source software. You can inspect it, edit it, and build it
+yourself. Normal users should not need Xcode or Swift: the release path is a
+prebuilt macOS DMG that you download, open, and drag into Applications.
 
-## What Works
+Current release staging lives at `https://github.com/rebel0789/scrivora`.
+The website is live at `https://scrivora.me`.
+
+## Install
+
+For normal use:
+
+1. Download `Scrivora-0.4.1.dmg` from the GitHub release:
+   `https://github.com/rebel0789/scrivora/releases/tag/v0.4.1`
+2. Open the DMG.
+3. Drag `Scrivora.app` into `Applications`.
+4. Open Scrivora from the menu bar and grant Microphone and Accessibility when
+   macOS asks.
+
+The current private GitHub release has source and notes ready. Attach the signed
+DMG after Developer ID signing, notarization, stapling, and Gatekeeper
+verification pass.
+
+## What It Does
 
 - macOS menu bar app.
 - Hold Control, double-tap Control, and configurable global shortcut triggers.
@@ -34,27 +50,36 @@ Some internal Swift target names and migration paths still use the earlier
 project name for compatibility. The public app name, bundle ID, website, and
 release docs use Scrivora.
 
-## Requirements
+## Requirements For Users
 
 - macOS 14 or newer.
-- Swift 6.1 or newer.
-- Xcode 16 or newer for app bundle signing and local install flows.
+- A downloaded `Scrivora.app` or `Scrivora-0.4.1.dmg`.
 
-## Build
+No account. No card. No cloud speech API for core dictation.
+
+## Build From Source
+
+Only developers need this path.
+
+Requirements:
+
+- Swift 6.1 or newer.
+- Xcode 16 or newer if you want to package or sign a local app bundle.
+
+Build and test:
 
 ```bash
 swift test
 swift build --product LocalVoiceFlowApp
 ```
 
-Run the app with mock ASR when you want to test the UI and permissions without a
-large local model:
+Run with mock ASR when you want to test the UI without a large local model:
 
 ```bash
 LOCALVOICEFLOW_USE_MOCK_ASR=1 swift run LocalVoiceFlowApp
 ```
 
-Build and install a local app bundle:
+Install a local development app bundle:
 
 ```bash
 Scripts/install_app_bundle.sh
@@ -99,7 +124,7 @@ data, signing material, keychains, or generated release artifacts.
 
 ## Verification
 
-Use the narrow checks first:
+Developer checks:
 
 ```bash
 swift test
@@ -108,7 +133,7 @@ Scripts/audit_sensitive_files.sh
 Scripts/stage_site.sh
 ```
 
-Before a public Mac download, also run the clean-Mac install test, verify
+Before attaching a public DMG, also run the clean-Mac install test, verify
 Microphone and Accessibility permissions from a fresh user profile, and confirm
 Gatekeeper accepts the signed artifact.
 
@@ -144,9 +169,9 @@ Use `RELEASE_STATUS.md` as the current release source of truth.
 Current release tracks:
 
 - Source repo: staged privately on GitHub for review.
-- Website: staged locally for `https://scrivora.me` and ready to connect to the
-  GitHub release path.
-- Mac app binary: gated by Developer ID signing and notarization.
+- Website: live at `https://scrivora.me`.
+- Mac app binary: ship as a drag-to-Applications DMG after Developer ID signing,
+  notarization, and Gatekeeper verification.
 - In-app updates: manifest template only until the signed updater ZIP exists.
 
 See:

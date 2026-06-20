@@ -2,13 +2,26 @@
 
 Scrivora has two separate release tracks:
 
-- Source release: stage the clean tree privately at
-  `https://github.com/rebel0789/scrivora`, then make it public after the license
-  and clean-clone checks pass.
-- Mac binary release: publish a DMG and updater ZIP only after Developer ID
-  signing, notarization, stapling, and Gatekeeper verification pass.
+- User release: publish `Scrivora-0.4.1.dmg`. Users open it, drag
+  `Scrivora.app` into Applications, and run the menu bar app.
+- Source release: publish the code for people who want to inspect, edit, or
+  build Scrivora themselves.
 
 Use `RELEASE_STATUS.md` for the current release state.
+
+## User Install
+
+The public install path should stay this simple:
+
+1. Download `Scrivora-0.4.1.dmg` from the GitHub release.
+2. Open the DMG.
+3. Drag `Scrivora.app` into `/Applications`.
+4. Open Scrivora and grant Microphone and Accessibility when macOS asks.
+
+Users do not need Swift, Xcode, or a local build.
+
+The DMG must be Developer ID signed, notarized, stapled, and accepted by
+Gatekeeper before it is attached to a public release.
 
 ## Local Development Install
 

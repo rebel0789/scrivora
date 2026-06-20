@@ -1,7 +1,8 @@
 # Open Source Strategy
 
-Scrivora’s public repo should be useful on day one: buildable source, clear
-privacy boundaries, clean model policy, and no local machine artifacts.
+Scrivora’s public release should be useful on day one: a simple Mac DMG for
+users, buildable source for developers, clear privacy boundaries, clean model
+policy, and no local machine artifacts.
 
 Use `RELEASE_STATUS.md` for the current release state.
 
@@ -74,7 +75,7 @@ Before flipping the repo public:
 
 ## Binary Release Boundary
 
-Open source does not make the Mac app safe to download.
+The user-facing install path is the prebuilt DMG. Source builds are optional.
 
 Public DMG and in-app update releases require:
 
@@ -97,7 +98,7 @@ Say this:
   speech API.
 - Model downloads and update checks are explicit network actions.
 - The source repo is public once the license is added.
-- Public Mac downloads use the signed release channel.
+- Public Mac downloads use a signed drag-to-Applications DMG.
 
 Do not claim this until verified:
 

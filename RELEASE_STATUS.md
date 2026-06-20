@@ -10,21 +10,21 @@ files are historical unless they point here.
 Scrivora is staged for private GitHub review at
 `https://github.com/rebel0789/scrivora`.
 
-The source tree can move from private review to public release after the source
-license is chosen and the final clean-clone check passes.
+The public product path is a prebuilt Mac DMG: download, open, drag Scrivora into
+Applications, then start dictating from the menu bar.
 
-The public Mac binary download track is gated on Developer ID signing,
-notarization, stapling, and Gatekeeper acceptance on a clean Mac.
+The source tree is for people who want to inspect, edit, or build Scrivora
+themselves.
 
 ## Tracks
 
 | Track | Status | Next gate |
 | --- | --- | --- |
 | Source repo | Private staging | Choose license and add `LICENSE` before public visibility. |
-| Website | Prepared locally | Publish after GitHub links and domain target are confirmed. |
-| GitHub Pages | Workflow prepared | Enable after the repo visibility and domain target are confirmed. |
+| Website | Live | `https://scrivora.me` is served by GitHub Pages. |
+| GitHub Pages | Live | HTTPS is enforced for `scrivora.me`. |
 | Vercel | Static bundle prepared | Re-authenticate Vercel and attach `scrivora.me` only after confirmation. |
-| Mac app DMG | Scripted | Developer ID signing, notarization, stapling, Gatekeeper check. |
+| Mac app DMG | Scripted | Attach after Developer ID signing, notarization, stapling, Gatekeeper check. |
 | In-app update manifest | Template only | Generate `updates/stable.json` from the final signed ZIP and uploaded URL. |
 
 ## Current Product Scope
@@ -95,7 +95,7 @@ until the exact artifact, hash, and license obligations are known.
 7. Push to `https://github.com/rebel0789/scrivora`, not a scratch checkout with
    no remote.
 
-## Required Before Publishing A Mac Download
+## Required Before Attaching The DMG
 
 1. Create or install a Developer ID Application certificate.
 2. Set:
@@ -115,7 +115,7 @@ until the exact artifact, hash, and license obligations are known.
 7. Test install and first dictation on a clean Mac or clean user profile.
 8. Upload the ZIP and DMG to a versioned GitHub Release.
 9. Generate `updates/stable.json` from the exact uploaded ZIP URL.
-10. Publish the website and update manifest only after the artifact URL works.
+10. Publish `updates/stable.json` only after the updater ZIP URL works.
 
 ## Do Not Claim Until Verified
 
