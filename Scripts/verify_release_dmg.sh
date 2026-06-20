@@ -10,6 +10,13 @@ fi
 
 hdiutil verify "$DMG" >/dev/null
 codesign --verify --verbose=2 "$DMG"
+DMG_SIGNATURE="$(codesign -dvvv "$DMG" 2>&1)"
+printf '%s\n' "$DMG_SIGNATURE" | sed -n '/Authority=/p;/TeamIdentifier=/p'
+if ! printf '%s\n' "$DMG_SIGNATURE" | grep -q '^Authority=Developer ID Application:'; then
+  echo "Release DMG is not signed with a Developer ID Application identity." >&2
+  echo "Do not publish this artifact; browser-downloaded copies can be rejected as damaged by Gatekeeper." >&2
+  exit 1
+fi
 spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
 
 MOUNT_OUTPUT="$(hdiutil attach "$DMG" -readonly -nobrowse)"

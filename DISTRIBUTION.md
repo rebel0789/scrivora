@@ -21,7 +21,8 @@ The public install path should stay this simple:
 Users do not need Swift, Xcode, or a local build.
 
 The DMG must be Developer ID signed, notarized, stapled, and accepted by
-Gatekeeper before it is attached to a public release.
+Gatekeeper before it is attached to a public release. Do not upload or link a
+local development-signed DMG; macOS will reject it after download.
 
 ## Local Development Install
 

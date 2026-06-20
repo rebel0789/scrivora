@@ -15,18 +15,17 @@ The website is live at `https://scrivora.me`.
 
 ## Install
 
-For normal use:
+The normal install path, once the signed DMG is attached, is:
 
-1. Download `Scrivora-0.4.1.dmg` from the GitHub release:
-   `https://github.com/rebel0789/scrivora/releases/tag/v0.4.1`
+1. Download the versioned `Scrivora.dmg` from the GitHub release.
 2. Open the DMG.
 3. Drag `Scrivora.app` into `Applications`.
 4. Open Scrivora from the menu bar and grant Microphone and Accessibility when
    macOS asks.
 
-The current private GitHub release has source and notes ready. Attach the signed
-DMG after Developer ID signing, notarization, stapling, and Gatekeeper
-verification pass.
+Attach the DMG only after Developer ID signing, notarization, stapling, and
+Gatekeeper verification pass. A local development-signed DMG will be rejected by
+macOS after download.
 
 ## What It Does
 
@@ -53,7 +52,7 @@ release docs use Scrivora.
 ## Requirements For Users
 
 - macOS 14 or newer.
-- A downloaded `Scrivora.app` or `Scrivora-0.4.1.dmg`.
+- A Developer ID signed and notarized `Scrivora.app` or `Scrivora-0.4.1.dmg`.
 
 No account. No card. No cloud speech API for core dictation.
 
