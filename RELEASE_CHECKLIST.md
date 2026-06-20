@@ -53,6 +53,26 @@ update manifest.
 
 ## Mac App Download
 
+- [ ] For the free OSS preview path, build the preview DMG:
+
+  ```bash
+  SCRIVORA_PREVIEW_APP=/Applications/Scrivora.app Scripts/package_preview_dmg.sh
+  Scripts/generate_release_checksums.sh \
+    .build/release-artifacts \
+    .build/release-artifacts/SHA256SUMS.txt \
+    .build/release-artifacts/Scrivora-0.4.1-preview-unnotarized.dmg
+  ```
+
+- [ ] Upload `Scrivora-0.4.1-preview-unnotarized.dmg` and `SHA256SUMS.txt` to
+      the GitHub release.
+- [ ] Confirm the README, release page, and GitHub release body include:
+      manual download, optional Homebrew cask, SHA-256 check, and the
+      per-app quarantine removal command.
+- [ ] Confirm the DMG mounts, contains `Scrivora.app` plus the Applications
+      shortcut, and copied app verification passes.
+
+## Paid Developer ID Release
+
 - [ ] Set release inputs:
 
   ```bash
@@ -114,13 +134,22 @@ update manifest.
 - [ ] Check updates from the installed app.
 - [ ] Install through the updater on a clean Mac or clean user profile.
 
-## Final Public Checks
+## Final Preview Checks
+
+- [ ] `https://scrivora.me/` links the preview DMG.
+- [ ] `https://scrivora.me/releases/v0.4.1.html` links the preview DMG and
+      `SHA256SUMS.txt`.
+- [ ] The GitHub release includes the preview DMG, `SHA256SUMS.txt`, source
+      tag, and release notes.
+- [ ] The damaged-app instructions remove quarantine from
+      `/Applications/Scrivora.app` only.
+
+## Final Developer ID Checks
 
 - [ ] `spctl --assess --type execute --verbose=4 /Applications/Scrivora.app`
       accepts the installed app.
 - [ ] `Scripts/verify_release_dmg.sh .build/release-artifacts/Scrivora-0.4.1.dmg`
       passes.
-- [ ] `https://scrivora.me/releases/v0.4.1.html` matches the shipped artifact.
 - [ ] `https://scrivora.me/updates/stable.json` points at the exact uploaded
       updater ZIP.
 - [ ] The GitHub release includes source tag, DMG, updater ZIP, SHA-256, and

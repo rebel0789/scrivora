@@ -363,6 +363,7 @@
         <div class="actions">
           <a class="button primary" href="https://github.com/rebel0789/scrivora/releases/download/v0.4.1/Scrivora-0.4.1-preview-unnotarized.dmg">Download DMG</a>
           <a class="button" href="/">Website</a>
+          <a class="button" href="https://github.com/rebel0789/scrivora/releases/download/v0.4.1/SHA256SUMS.txt">SHA256SUMS</a>
           <a class="button" href="/updates/stable.example.json">Update manifest</a>
         </div>
       </div>
@@ -388,6 +389,13 @@
           <div>
             <h3>If macOS says the app is damaged.</h3>
             <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. This removes quarantine from Scrivora only.</p>
+          </div>
+        </article>
+        <article class="note-item">
+          <strong>Verify</strong>
+          <div>
+            <h3>Check the downloaded DMG.</h3>
+            <p>Download <code>SHA256SUMS.txt</code> from the release and compare it with <code>shasum -a 256 ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg</code>.</p>
           </div>
         </article>
         <article class="note-item">

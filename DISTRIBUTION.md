@@ -20,6 +20,13 @@ The preview install path should stay this simple:
 
 Users do not need Swift, Xcode, or a local build.
 
+Optional Homebrew path once the repository is public:
+
+```bash
+brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
+brew install --cask scrivora
+```
+
 The free preview DMG is not Apple notarized. If macOS reports that the app is
 damaged, remove quarantine from the installed app only:
 
@@ -58,6 +65,7 @@ Scripts/create_local_codesign_identity.sh
 Scripts/package_dev_app.sh
 Scripts/package_app_bundle.sh
 Scripts/package_preview_dmg.sh
+Scripts/generate_release_checksums.sh
 Scripts/install_app_bundle.sh
 Scripts/clean_dev_signing_material.sh
 Scripts/audit_sensitive_files.sh

@@ -7,13 +7,11 @@ pastes the result into the focused app. Core dictation is designed to work
 without a cloud speech API.
 
 Scrivora is open-source software. You can inspect it, edit it, and build it
-yourself. Normal users should not need Xcode or Swift: the release path is a
-prebuilt macOS DMG that you download, open, and drag into Applications.
+yourself. Normal users do not need Xcode or Swift: download the DMG, open it,
+and drag Scrivora into Applications.
 
 Current release staging lives at `https://github.com/rebel0789/scrivora`.
 The website is live at `https://scrivora.me`.
-
-## Install
 
 ## Installation Guide
 
@@ -31,6 +29,31 @@ Then:
 2. Drag `Scrivora.app` into `Applications`.
 3. Open Scrivora from the menu bar and grant Microphone and Accessibility when
    macOS asks.
+
+Optional checksum check:
+
+```bash
+shasum -a 256 ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
+```
+
+Compare the result with `SHA256SUMS.txt` on the GitHub release.
+
+### Option B: Homebrew
+
+Homebrew is optional. It is useful because the cask removes quarantine from
+`Scrivora.app` after installation.
+
+```bash
+brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
+brew install --cask scrivora
+```
+
+If Homebrew says the app already exists:
+
+```bash
+rm -rf "/Applications/Scrivora.app"
+brew install --cask scrivora
+```
 
 The preview DMG is open source and free, but it is not Apple notarized. Some
 macOS versions show a damaged-app warning for unnotarized apps.
