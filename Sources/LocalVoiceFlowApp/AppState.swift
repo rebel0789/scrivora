@@ -22,6 +22,24 @@ enum DictationRuntimeState: Equatable {
         case .failed: "Error"
         }
     }
+
+    var isCapturing: Bool {
+        switch self {
+        case .listening, .speechDetected, .partialTranscription:
+            true
+        case .idle, .processing, .finished, .failed:
+            false
+        }
+    }
+
+    var shouldPresentFloatingOverlay: Bool {
+        switch self {
+        case .idle, .finished:
+            false
+        case .listening, .speechDetected, .partialTranscription, .processing, .failed:
+            true
+        }
+    }
 }
 
 struct StorageUsageItem: Identifiable, Equatable {
@@ -48,6 +66,8 @@ final class AppState: ObservableObject {
     @Published var microphonePermission: PermissionState = .unknown
     @Published var accessibilityPermission: PermissionState = .unknown
     @Published var modelDownloadMessage: String?
+    @Published var downloadingModelID: String?
+    @Published var modelDownloadProgress: [String: Double] = [:]
     @Published var activeDictationProfile: ResolvedDictationProfile = .fallback
     @Published var correctionRecords: [CorrectionRecord] = []
     @Published var improvementStats = ImprovementStats()
@@ -59,6 +79,10 @@ final class AppState: ObservableObject {
     @Published var storageStatusMessage: String?
     @Published var privacyExportMessage: String?
     @Published var storageMigrationStatus: DataStorageMigrationStatus?
+    @Published var availableUpdate: AppUpdateManifest?
+    @Published var updateStatusMessage: String?
+    @Published var isCheckingForUpdates = false
+    @Published var isInstallingUpdate = false
 
     let fileStore: LocalFileStore
     let modelCatalog = ModelCatalog.default
@@ -72,6 +96,7 @@ final class AppState: ObservableObject {
     private let correctionLearner = CorrectionLearner()
     private let audioCapture = AudioCaptureService()
     private let textInserter = TextInsertionService()
+    private let updateInstaller = AppUpdateInstaller()
     private let permissions = PermissionsManager()
     private let performanceLogger = PerformanceLogger()
     private let overlayController = FloatingOverlayController()
@@ -80,18 +105,22 @@ final class AppState: ObservableObject {
     private var vad = VoiceActivityDetector()
     private var silenceDetector = SilenceDetector(requiredSilentFrames: 24)
     private var hotkeyManager: HotkeyManager?
+    private var hotkeyRegistrationError: String?
     private var dictationRequestedAt: Date?
     private var recordingStartedAt: Date?
     private var speechEndedAt: Date?
     private var firstSpeechDetectedAt: Date?
     private var firstPartialTranscriptAt: Date?
     private var cachedASREngine: (modelID: String, engine: any ASREngine)?
+    private var modelPreparationTask: Task<Void, Never>?
+    private var modelSelectionRevision = 0
     private var targetApplication: NSRunningApplication?
     private var lastNonLocalVoiceFlowApplication: NSRunningApplication?
     private var partialTranscriptTask: Task<Void, Never>?
     private var lastPartialRequestedAt: Date?
     private var partialStabilizer = PartialTranscriptStabilizer(requiredRepeats: 2)
     private var partialSequenceNumber = 0
+    private var finishedResetWorkItem: DispatchWorkItem?
 
     init() {
         fileStore = LocalFileStore()
@@ -102,8 +131,12 @@ final class AppState: ObservableObject {
         modelStorage = ModelStorage(directory: fileStore.modelsDirectory)
 
         try? fileStore.prepareDirectories()
+        _ = TempAudioFileManager().removeStaleTemporaryFiles()
         settings = (try? settingsStore.load()) ?? .default
+        applyBundledUpdateManifestURLIfNeeded()
         normalizeSettingsForImplementedBackend()
+        migrateVoiceBarsDefaultIfNeeded()
+        migrateFastHoldControlDefaultIfNeeded()
         history = (try? historyStore.load()) ?? []
         correctionRecords = (try? correctionStore.load()) ?? []
         improvementStats = (try? correctionStore.stats()) ?? ImprovementStats()
@@ -118,7 +151,8 @@ final class AppState: ObservableObject {
         Task { @MainActor [weak self] in
             self?.syncOverlay()
         }
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
+        Task { await checkForUpdates(manual: false) }
     }
 
     var menuBarSystemImage: String {
@@ -137,7 +171,11 @@ final class AppState: ObservableObject {
     }
 
     var selectedModel: ASRModelInfo? {
-        modelCatalog.model(id: settings.models.selectedASRModelID)
+        guard let model = modelCatalog.model(id: settings.models.selectedASRModelID),
+              isSelectableASRModel(model),
+              isModelDownloaded(model)
+        else { return nil }
+        return model
     }
 
     var dataFolderPath: String {
@@ -153,9 +191,28 @@ final class AppState: ObservableObject {
         !settings.privacy.firstRunPrivacyChoiceCompleted
     }
 
+    var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    }
+
+    var appBundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? AppBrand.bundleIdentifier
+    }
+
+    var shouldShowUpdateAnnouncement: Bool {
+        guard let availableUpdate else { return false }
+        return settings.updates.dismissedVersion != availableUpdate.version
+    }
+
     func refreshPermissions() {
+        let previousAccessibilityPermission = accessibilityPermission
         microphonePermission = permissions.microphonePermissionState()
         accessibilityPermission = permissions.accessibilityPermissionState()
+        if hotkeyManager != nil,
+           previousAccessibilityPermission != .granted,
+           accessibilityPermission == .granted {
+            registerHotkey()
+        }
     }
 
     func requestMicrophonePermission() {
@@ -166,6 +223,9 @@ final class AppState: ObservableObject {
 
     func requestAccessibilityPermission() {
         accessibilityPermission = permissions.requestAccessibilityPermission()
+        if accessibilityPermission == .granted {
+            registerHotkey()
+        }
     }
 
     func openAccessibilitySettings() {
@@ -218,6 +278,7 @@ final class AppState: ObservableObject {
                 }
             }
             runtimeState = .listening
+            playDictationSound(.start)
             if let dictationRequestedAt {
                 let elapsed = Date().timeIntervalSince(dictationRequestedAt)
                 Task { await performanceLogger.setHotkeyToRecordingStart(elapsed) }
@@ -229,14 +290,15 @@ final class AppState: ObservableObject {
     }
 
     func stopDictation() {
+        guard runtimeState.isCapturing else { return }
         audioCapture.stop()
         voiceLevel = 0
         voiceBrightness = 0
         voiceSpectrum = .silent
         partialTranscriptTask?.cancel()
         partialTranscriptTask = nil
-        guard runtimeState != .processing else { return }
         runtimeState = .processing
+        playDictationSound(.stop)
         syncOverlay()
         speechEndedAt = Date()
 
@@ -247,11 +309,15 @@ final class AppState: ObservableObject {
     }
 
     func selectModel(_ model: ASRModelInfo) {
+        guard isModelDownloaded(model) else {
+            modelDownloadMessage = "Download \(model.displayName) before using it."
+            return
+        }
         settings.models.selectedASRModelID = model.id
         settings.models.selectedASRMode = model.mode
         invalidateASREngine()
         saveSettings()
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
     }
 
     func isModelDownloaded(_ model: ASRModelInfo) -> Bool {
@@ -266,58 +332,82 @@ final class AppState: ObservableObject {
         return modelStorage.isDownloaded(model)
     }
 
+    func isModelDownloading(_ model: ASRModelInfo) -> Bool {
+        downloadingModelID == model.id
+    }
+
+    func downloadProgress(for model: ASRModelInfo) -> Double? {
+        modelDownloadProgress[model.id]
+    }
+
     func setPreferPersistentWhisperServer(_ enabled: Bool) {
         settings.models.preferPersistentWhisperServer = enabled
         invalidateASREngine()
         saveSettings()
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
     }
 
     func setWhisperServerPath(_ path: String) {
         settings.models.whisperServerExecutablePath = normalizedOptionalPath(path)
         invalidateASREngine()
         saveSettings()
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
     }
 
     func setWhisperExecutablePath(_ path: String) {
         settings.models.whisperExecutablePath = normalizedOptionalPath(path)
         invalidateASREngine()
         saveSettings()
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
     }
 
     func setCustomASRModelPath(_ path: String) {
         settings.models.customASRModelPath = normalizedOptionalPath(path)
         invalidateASREngine()
         saveSettings()
-        Task { await prepareSelectedASRModelIfPossible() }
+        scheduleSelectedModelPreparation()
     }
 
     func downloadModel(_ model: ASRModelInfo) {
+        guard downloadingModelID == nil else {
+            modelDownloadMessage = "Finish the current model download before starting another."
+            return
+        }
+
         guard NetworkAccessPolicy.canDownloadRemoteModel(privacy: settings.privacy) else {
             modelDownloadMessage = "Offline Mode is on. Scrivora will only use local models and local services. Remote model downloads are disabled."
             return
         }
 
-        guard model.downloadURL != nil else {
+        guard model.backend == .fluidAudio || model.downloadURL != nil else {
             modelDownloadMessage = "No direct download is configured for \(model.displayName)."
             return
         }
 
         modelDownloadMessage = "Downloading \(model.displayName)..."
+        downloadingModelID = model.id
+        modelDownloadProgress[model.id] = 0
         Task {
+            defer {
+                downloadingModelID = nil
+                modelDownloadProgress[model.id] = nil
+            }
             do {
                 switch model.backend {
                 case .whisperCpp:
-                    _ = try await ModelDownloader().download(model: model, to: modelStorage)
+                    _ = try await ModelDownloader().download(model: model, to: modelStorage) { [weak self] progress in
+                        Task { @MainActor in
+                            self?.modelDownloadProgress[model.id] = progress
+                        }
+                    }
                 case .fluidAudio:
+                    modelDownloadProgress[model.id] = nil
                     _ = try await FluidAudioModelSupport.download(model)
                 default:
                     throw LocalVoiceFlowError.modelUnavailable("Direct app download is enabled for whisper.cpp and FluidAudio Parakeet models.")
                 }
                 selectModel(model)
-                modelDownloadMessage = "Downloaded \(model.displayName)."
+                modelDownloadMessage = "Downloaded and selected \(model.displayName)."
             } catch {
                 modelDownloadMessage = error.localizedDescription
             }
@@ -333,7 +423,11 @@ final class AppState: ObservableObject {
             }
             if settings.models.selectedASRModelID == model.id {
                 invalidateASREngine()
+                if repairSelectedASRModelIfNeeded(showMessage: true) {
+                    scheduleSelectedModelPreparation()
+                }
             }
+            modelDownloadProgress[model.id] = nil
             modelDownloadMessage = "Deleted \(model.displayName)."
         } catch {
             modelDownloadMessage = error.localizedDescription
@@ -456,7 +550,7 @@ final class AppState: ObservableObject {
         do {
             let result = try PrivacyExportService(
                 fileStore: fileStore,
-                fluidAudioDirectory: fluidAudioSupportDirectory()
+                fluidAudioDirectory: fluidAudioModelsDirectory()
             ).export(
                 options: options,
                 to: destination,
@@ -472,7 +566,7 @@ final class AppState: ObservableObject {
     func refreshStorageUsage() {
         storageMigrationStatus = DataStorageMigrationService().status(currentRootDirectory: fileStore.rootDirectory)
         let performanceLogURL = fileStore.logsDirectory.appendingPathComponent("dictation-performance.jsonl")
-        let fluidAudioRoot = fluidAudioSupportDirectory()
+        let fluidAudioRoot = fluidAudioModelsDirectory()
         storageUsageItems = [
             StorageUsageItem(
                 id: "history",
@@ -523,11 +617,133 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([fileStore.rootDirectory])
     }
 
+    func openWhisperModelFolder() {
+        try? FileManager.default.createDirectory(at: fileStore.modelsDirectory, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([fileStore.modelsDirectory])
+    }
+
+    func openFluidAudioModelFolder() {
+        let directory = fluidAudioModelsDirectory()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([directory])
+    }
+
+    func clearWhisperModels() {
+        clearDirectoryContents(fileStore.modelsDirectory, message: "Whisper model cache cleared.")
+    }
+
+    func clearFluidAudioModelCache() {
+        clearDirectoryContents(fluidAudioModelsDirectory(), message: "FluidAudio model cache cleared.")
+    }
+
+    func setAutomaticUpdateChecks(_ enabled: Bool) {
+        settings.updates.automaticChecksEnabled = enabled
+        saveSettings()
+    }
+
+    func setUpdateManifestURL(_ value: String) {
+        settings.updates.manifestURLString = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        saveSettings()
+    }
+
+    func setIncludePrereleaseUpdates(_ enabled: Bool) {
+        settings.updates.includePrerelease = enabled
+        saveSettings()
+    }
+
+    func dismissUpdateAnnouncement() {
+        guard let availableUpdate else { return }
+        settings.updates.dismissedVersion = availableUpdate.version
+        saveSettings()
+    }
+
+    func checkForUpdates(manual: Bool) async {
+        guard manual || settings.updates.automaticChecksEnabled else { return }
+        guard let manifestURL = updateManifestURL() else {
+            if manual {
+                updateStatusMessage = "Set an update manifest URL before checking for updates."
+            }
+            return
+        }
+        guard manifestURL.isFileURL || NetworkAccessPolicy.canCheckRemoteUpdates(privacy: settings.privacy) else {
+            updateStatusMessage = "Offline Mode is on. Remote update checks are disabled."
+            return
+        }
+
+        isCheckingForUpdates = true
+        updateStatusMessage = manual ? "Checking for updates..." : updateStatusMessage
+        defer { isCheckingForUpdates = false }
+
+        do {
+            let manifest = try await updateInstaller.fetchManifest(from: manifestURL)
+            settings.updates.lastCheckedAt = Date()
+
+            let channel = manifest.channel.lowercased()
+            if channel.contains("pre") || channel.contains("beta") {
+                guard settings.updates.includePrerelease else {
+                    availableUpdate = nil
+                    updateStatusMessage = manual
+                        ? "A \(manifest.channel) update is available, but prerelease updates are off."
+                        : updateStatusMessage
+                    saveSettings()
+                    return
+                }
+            }
+
+            if AppUpdateVersionComparator.isVersion(manifest.version, newerThan: appVersion) {
+                availableUpdate = manifest
+                updateStatusMessage = "Scrivora \(manifest.version) is available."
+            } else {
+                availableUpdate = nil
+                updateStatusMessage = manual ? "Scrivora is up to date." : updateStatusMessage
+            }
+            saveSettings()
+        } catch {
+            updateStatusMessage = error.localizedDescription
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard let availableUpdate else {
+            updateStatusMessage = "No update is available."
+            return
+        }
+        guard !isInstallingUpdate else { return }
+
+        isInstallingUpdate = true
+        updateStatusMessage = "Downloading Scrivora \(availableUpdate.version)..."
+
+        Task {
+            do {
+                let prepared = try await updateInstaller.prepareUpdate(
+                    availableUpdate,
+                    expectedBundleIdentifier: appBundleIdentifier,
+                    currentVersion: appVersion
+                )
+                updateStatusMessage = "Installing Scrivora \(availableUpdate.version)..."
+                try updateInstaller.launchInstaller(for: prepared)
+                updateStatusMessage = "Relaunching Scrivora..."
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    NSApp.terminate(nil)
+                }
+            } catch {
+                isInstallingUpdate = false
+                updateStatusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func openAvailableUpdateReleaseNotes() {
+        guard let url = availableUpdate?.releaseNotesURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func saveSettings() {
         do {
             try settingsStore.save(settings)
             configureSilenceDetector()
             registerHotkey()
+            syncOverlay()
         } catch {
             fail(error.localizedDescription)
         }
@@ -560,7 +776,7 @@ final class AppState: ObservableObject {
 
         _ = chunkScheduler.append(samples)
 
-        if settings.dictation.autoStopOnSilence, silenceDetector.observe(isSpeech: isSpeech) {
+        if settings.dictation.shouldObserveSilenceAutoStop, silenceDetector.observe(isSpeech: isSpeech) {
             stopDictation()
         }
     }
@@ -571,7 +787,12 @@ final class AppState: ObservableObject {
                 throw LocalVoiceFlowError.invalidAudio("No speech audio was captured.")
             }
 
-            let model = selectedModel ?? modelCatalog.recommendedModel(for: .balanced)!
+            if repairSelectedASRModelIfNeeded(showMessage: true) {
+                scheduleSelectedModelPreparation()
+            }
+            guard let model = selectedModel else {
+                throw LocalVoiceFlowError.modelUnavailable("Download a speech model before dictating.")
+            }
             let engine = try await preparedEngine(for: model)
 
             let asrWatch = Stopwatch()
@@ -629,16 +850,27 @@ final class AppState: ObservableObject {
 
             if settings.dictation.copyToClipboard || settings.dictation.autoPaste {
                 let pasteWatch = Stopwatch()
+                let pasteStartedAt = Date()
                 do {
+                    let focusedAtEnd = NSWorkspace.shared.frontmostApplication.flatMap { app in
+                        app.processIdentifier == NSRunningApplication.current.processIdentifier ? nil : app
+                    }
                     let insertResult = try await textInserter.insertText(
                         cleaned,
-                        targetApplication: targetApplication,
+                        startApplication: targetApplication,
+                        endApplication: focusedAtEnd,
                         autoPaste: settings.dictation.autoPaste,
-                        restoreClipboard: settings.dictation.restoreClipboardAfterPaste,
-                        restoreDelayMilliseconds: settings.dictation.clipboardRestoreDelayMilliseconds
+                        pasteTargetBehavior: settings.dictation.pasteTargetBehavior,
+                        pasteStrategy: settings.dictation.restoreClipboardAfterPaste ? settings.dictation.pasteStrategy : .instant,
+                        customRestoreDelayMilliseconds: settings.dictation.clipboardRestoreDelayMilliseconds
                     )
-                    await performanceLogger.setPasteMethod(insertResult.method.rawValue)
-                    await performanceLogger.setCleanupToPaste(pasteWatch.elapsedSeconds())
+                    await performanceLogger.setPastePipelineMetrics(insertResult.metrics)
+                    await performanceLogger.setCleanupToPaste(insertResult.metrics.visibleInsertLatency ?? pasteWatch.elapsedSeconds())
+                    if let speechEndedAt, let visibleInsertLatency = insertResult.metrics.visibleInsertLatency {
+                        await performanceLogger.setUserVisibleStopToInsertLatency(
+                            pasteStartedAt.addingTimeInterval(visibleInsertLatency).timeIntervalSince(speechEndedAt)
+                        )
+                    }
                 } catch {
                     nonFatalErrors.append("Text was transcribed and saved, but paste failed: \(error.localizedDescription)")
                     await performanceLogger.setPasteMethod("copyFallback")
@@ -735,6 +967,52 @@ final class AppState: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private func updateManifestURL() -> URL? {
+        let value = settings.updates.manifestURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        if value.hasPrefix("/") {
+            return URL(fileURLWithPath: value)
+        }
+        return URL(string: value)
+    }
+
+    private func applyBundledUpdateManifestURLIfNeeded() {
+        guard settings.updates.manifestURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard
+            let bundledValue = Bundle.main.object(forInfoDictionaryKey: "ScrivoraUpdateManifestURL") as? String,
+            !bundledValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        settings.updates.manifestURLString = bundledValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        try? settingsStore.save(settings)
+    }
+
+    private func migrateVoiceBarsDefaultIfNeeded() {
+        let migrationKey = "scrivora.migrations.voiceBarsDefault.v1"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        if settings.dictation.floatingOverlayStyle != .voiceBars ||
+            settings.dictation.floatingOverlayPalette != .scrivora {
+            settings.dictation.floatingOverlayStyle = .voiceBars
+            settings.dictation.floatingOverlayPalette = .scrivora
+            settings.dictation.floatingOverlayPlacement = .bottom
+            try? settingsStore.save(settings)
+        }
+
+        UserDefaults.standard.set(true, forKey: migrationKey)
+    }
+
+    private func migrateFastHoldControlDefaultIfNeeded() {
+        let migrationKey = "scrivora.migrations.fastHoldControlDefault.v1"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        if settings.dictation.holdControlThresholdMilliseconds == 150 {
+            settings.dictation.holdControlThresholdMilliseconds = 80
+            try? settingsStore.save(settings)
+        }
+
+        UserDefaults.standard.set(true, forKey: migrationKey)
+    }
+
     private func preparedEngine(for model: ASRModelInfo) async throws -> any ASREngine {
         if let cachedASREngine,
            cachedASREngine.modelID == model.id,
@@ -751,28 +1029,82 @@ final class AppState: ObservableObject {
         try await engine.warmup()
         await performanceLogger.setModelWarmupTime(warmupWatch.elapsedSeconds())
 
-        cachedASREngine = (model.id, engine)
+        if settings.models.selectedASRModelID == model.id,
+           isModelDownloaded(model) {
+            cachedASREngine = (model.id, engine)
+        }
         return engine
     }
 
-    private func prepareSelectedASRModelIfPossible() async {
+    private func scheduleSelectedModelPreparation() {
+        modelSelectionRevision += 1
+        let revision = modelSelectionRevision
+        modelPreparationTask?.cancel()
+        modelPreparationTask = Task { @MainActor [weak self] in
+            await self?.prepareSelectedASRModelIfPossible(revision: revision)
+        }
+    }
+
+    private func prepareSelectedASRModelIfPossible(revision: Int) async {
+        if repairSelectedASRModelIfNeeded(showMessage: false) {
+            scheduleSelectedModelPreparation()
+            return
+        }
+
         guard let model = selectedModel,
-              [.whisperCpp, .fluidAudio].contains(model.backend),
               isModelDownloaded(model)
         else { return }
+        let modelID = model.id
         do {
-            _ = try await preparedEngine(for: model)
+            let engine = try await preparedEngine(for: model)
+            guard !Task.isCancelled,
+                  revision == modelSelectionRevision,
+                  settings.models.selectedASRModelID == modelID
+            else {
+                if cachedASREngine?.modelID != modelID {
+                    await engine.unload()
+                }
+                return
+            }
             lastError = nil
         } catch {
+            guard !Task.isCancelled,
+                  revision == modelSelectionRevision,
+                  settings.models.selectedASRModelID == modelID
+            else { return }
             lastError = error.localizedDescription
         }
     }
 
     private func invalidateASREngine() {
+        modelSelectionRevision += 1
+        modelPreparationTask?.cancel()
+        modelPreparationTask = nil
         if let cachedASREngine {
             Task { await cachedASREngine.engine.unload() }
         }
         cachedASREngine = nil
+    }
+
+    private enum DictationSound {
+        case start
+        case stop
+
+        var systemName: NSSound.Name {
+            switch self {
+            case .start: NSSound.Name("Pop")
+            case .stop: NSSound.Name("Tink")
+            }
+        }
+    }
+
+    private func playDictationSound(_ sound: DictationSound) {
+        guard settings.dictation.startStopSound else { return }
+        if let sound = NSSound(named: sound.systemName) {
+            sound.play()
+        } else {
+            NSSound.beep()
+        }
     }
 
     private func observeApplicationActivation() {
@@ -849,24 +1181,50 @@ final class AppState: ObservableObject {
             didChangeSettings = true
         }
 
-        guard let model = modelCatalog.model(id: settings.models.selectedASRModelID) else {
-            settings.models.selectedASRModelID = modelCatalog.recommendedModel(for: .balanced)?.id ?? "whispercpp-base-en-q5"
-            settings.models.selectedASRMode = .balanced
-            invalidateASREngine()
-            try? settingsStore.save(settings)
-            return
-        }
-
-        if ![ASRBackend.whisperCpp, .fluidAudio].contains(model.backend) {
-            settings.models.selectedASRModelID = modelCatalog.recommendedModel(for: .balanced)?.id ?? "whispercpp-base-en-q5"
-            settings.models.selectedASRMode = .balanced
-            didChangeSettings = true
-            invalidateASREngine()
-        }
-
         if didChangeSettings {
             try? settingsStore.save(settings)
         }
+
+        _ = repairSelectedASRModelIfNeeded(showMessage: false)
+    }
+
+    @discardableResult
+    private func repairSelectedASRModelIfNeeded(showMessage: Bool) -> Bool {
+        if let model = modelCatalog.model(id: settings.models.selectedASRModelID),
+           isSelectableASRModel(model),
+           isModelDownloaded(model) {
+            return false
+        }
+
+        let previousModelName = modelCatalog.model(id: settings.models.selectedASRModelID)?.displayName
+            ?? settings.models.selectedASRModelID
+        let availableIDs = Set(modelCatalog.models
+            .filter { isSelectableASRModel($0) && isModelDownloaded($0) }
+            .map(\.id))
+
+        guard let fallback = modelCatalog.bestAvailableASRModel(
+            preferredMode: settings.models.selectedASRMode,
+            availableIDs: availableIDs
+        ) else {
+            if showMessage {
+                modelDownloadMessage = "Download a speech model before dictating."
+            }
+            return false
+        }
+
+        settings.models.selectedASRModelID = fallback.id
+        settings.models.selectedASRMode = fallback.mode
+        invalidateASREngine()
+        try? settingsStore.save(settings)
+
+        if showMessage {
+            modelDownloadMessage = "Switched to \(fallback.displayName) because \(previousModelName) is unavailable."
+        }
+        return true
+    }
+
+    private func isSelectableASRModel(_ model: ASRModelInfo) -> Bool {
+        model.backend == .whisperCpp || model.backend == .fluidAudio
     }
 
     private func mergeLearnedEntries(_ entries: [UserDictionaryEntry]) {
@@ -915,8 +1273,14 @@ final class AppState: ObservableObject {
                     self?.stopDictation()
                 }
             )
+            if let hotkeyRegistrationError, lastError == hotkeyRegistrationError {
+                lastError = nil
+            }
+            hotkeyRegistrationError = nil
         } catch {
-            lastError = error.localizedDescription
+            let message = error.localizedDescription
+            hotkeyRegistrationError = message
+            lastError = message
         }
     }
 
@@ -976,23 +1340,42 @@ final class AppState: ObservableObject {
     }
 
     private func syncOverlay() {
-        guard settings.dictation.showFloatingOverlay else {
+        scheduleFinishedResetIfNeeded()
+
+        guard settings.dictation.showFloatingOverlay,
+              runtimeState.shouldPresentFloatingOverlay
+        else {
             overlayController.hide()
             return
         }
 
         overlayController.show(appState: self)
+    }
 
-        if runtimeState == .finished {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
-                guard let self, self.runtimeState == .finished else { return }
-                self.runtimeState = .idle
-                self.syncOverlay()
-            }
+    private func scheduleFinishedResetIfNeeded() {
+        guard runtimeState == .finished else {
+            finishedResetWorkItem?.cancel()
+            finishedResetWorkItem = nil
+            return
         }
+        guard finishedResetWorkItem == nil else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.runtimeState == .finished else { return }
+            self.finishedResetWorkItem = nil
+            self.runtimeState = .idle
+            self.syncOverlay()
+        }
+        finishedResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2, execute: workItem)
     }
 
     private func requestPartialTranscriptionIfNeeded() {
+        if repairSelectedASRModelIfNeeded(showMessage: false) {
+            scheduleSelectedModelPreparation()
+            return
+        }
+
         guard let model = selectedModel, model.backend == .fluidAudio else { return }
         guard runtimeState == .speechDetected || runtimeState == .partialTranscription else { return }
         guard partialTranscriptTask == nil else { return }
@@ -1064,6 +1447,13 @@ final class AppState: ObservableObject {
         guard settings.privacy.savePerformanceLogs else { return }
         let shouldIncludeTargetApp = !settings.privacy.privacyMode && settings.privacy.includeTargetAppInLogs
         let shouldIncludeTargetBundle = !settings.privacy.privacyMode && settings.privacy.includeTargetBundleIdentifierInLogs
+        var exportedMetrics = metrics
+        if !shouldIncludeTargetApp {
+            exportedMetrics.pasteTargetAppName = nil
+        }
+        if !shouldIncludeTargetBundle {
+            exportedMetrics.pasteTargetBundleIdentifier = nil
+        }
         let record = PerformanceLogRecord(
             triggerMode: settings.dictation.triggerMode.rawValue,
             asrBackend: model.backend.rawValue,
@@ -1073,8 +1463,8 @@ final class AppState: ObservableObject {
             targetBundleIdentifier: shouldIncludeTargetBundle ? profile.targetBundleIdentifier : nil,
             streamingMode: model.backend == .fluidAudio ? "pseudoStreaming" : "finalOnly",
             durationRecorded: audioDuration,
-            metrics: metrics,
-            pasteMethod: metrics.pasteMethod,
+            metrics: exportedMetrics,
+            pasteMethod: exportedMetrics.pasteMethod,
             error: error
         )
         try? performanceLogStore.append(record)
@@ -1085,6 +1475,32 @@ final class AppState: ObservableObject {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         return base.appendingPathComponent("FluidAudio", isDirectory: true)
+    }
+
+    private func fluidAudioModelsDirectory() -> URL {
+        fluidAudioSupportDirectory().appendingPathComponent("Models", isDirectory: true)
+    }
+
+    private func clearDirectoryContents(_ directory: URL, message: String) {
+        do {
+            guard FileManager.default.fileExists(atPath: directory.path) else {
+                storageStatusMessage = message
+                refreshStorageUsage()
+                return
+            }
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
+            for url in contents {
+                try FileManager.default.removeItem(at: url)
+            }
+            invalidateASREngine()
+            storageStatusMessage = message
+            refreshStorageUsage()
+        } catch {
+            storageStatusMessage = error.localizedDescription
+        }
     }
 
     private func byteCount(at url: URL) -> Int64 {

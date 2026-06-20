@@ -3,21 +3,48 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/.build/Scrivora.app"
+LEGACY_APP="$ROOT/.build/LocalVoiceFlowApp.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
+RESOURCES="$CONTENTS/Resources"
 SIGNING_DIR="${LOCALVOICEFLOW_DEV_SIGNING_DIR:-$ROOT/.build/dev-signing}"
 LOCAL_KEYCHAIN="$SIGNING_DIR/LocalVoiceFlowSigning.keychain-db"
 LOCAL_KEYCHAIN_PASSWORD_FILE="$SIGNING_DIR/keychain-password.txt"
 DEFAULT_IDENTITY="LocalVoiceFlow Development"
+BUNDLE_ID="${SCRIVORA_BUNDLE_ID:-me.scrivora.app}"
+APP_VERSION="${SCRIVORA_VERSION:-0.4.1}"
+UPDATE_MANIFEST_URL="${SCRIVORA_UPDATE_MANIFEST_URL:-}"
+UPDATE_DEVELOPER_TEAM_ID="${SCRIVORA_UPDATE_DEVELOPER_TEAM_ID:-}"
+
+xml_escape() {
+  sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' \
+    -e "s/'/\&apos;/g"
+}
+
+BUNDLE_ID_XML="$(printf '%s' "$BUNDLE_ID" | xml_escape)"
+APP_VERSION_XML="$(printf '%s' "$APP_VERSION" | xml_escape)"
+UPDATE_MANIFEST_URL_XML="$(printf '%s' "$UPDATE_MANIFEST_URL" | xml_escape)"
+UPDATE_DEVELOPER_TEAM_ID_XML="$(printf '%s' "$UPDATE_DEVELOPER_TEAM_ID" | xml_escape)"
 
 cd "$ROOT"
 swift build -c release --product LocalVoiceFlowApp
 
-rm -rf "$APP"
-mkdir -p "$MACOS"
-cp "$ROOT/.build/release/LocalVoiceFlowApp" "$MACOS/LocalVoiceFlowApp"
+if [[ ! -f "$ROOT/Assets/ScrivoraIcon.icns" || ! -f "$ROOT/Assets/Brand/ScrivoraMenuBarTemplate.png" ]]; then
+  swift "$ROOT/Scripts/generate_brand_assets.swift" >/dev/null
+fi
 
-cat > "$CONTENTS/Info.plist" <<'PLIST'
+pkill -f "$LEGACY_APP/Contents/MacOS/LocalVoiceFlowApp" >/dev/null 2>&1 || true
+rm -rf "$APP" "$LEGACY_APP"
+mkdir -p "$MACOS" "$RESOURCES"
+cp "$ROOT/.build/release/LocalVoiceFlowApp" "$MACOS/LocalVoiceFlowApp"
+cp "$ROOT/Assets/ScrivoraIcon.icns" "$RESOURCES/ScrivoraIcon.icns"
+cp "$ROOT/Assets/Brand/ScrivoraMenuBarTemplate.png" "$RESOURCES/ScrivoraMenuBarTemplate.png"
+
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -25,21 +52,27 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>LocalVoiceFlowApp</string>
   <key>CFBundleIdentifier</key>
-  <string>app.localvoiceflow.mvp</string>
+  <string>${BUNDLE_ID_XML}</string>
   <key>CFBundleName</key>
   <string>Scrivora</string>
   <key>CFBundleDisplayName</key>
   <string>Scrivora</string>
+  <key>CFBundleIconFile</key>
+  <string>ScrivoraIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.3.0</string>
+  <string>${APP_VERSION_XML}</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Scrivora records microphone audio to transcribe speech locally on this Mac.</string>
+  <key>ScrivoraUpdateManifestURL</key>
+  <string>${UPDATE_MANIFEST_URL_XML}</string>
+  <key>ScrivoraUpdateDeveloperTeamID</key>
+  <string>${UPDATE_DEVELOPER_TEAM_ID_XML}</string>
 </dict>
 </plist>
 PLIST

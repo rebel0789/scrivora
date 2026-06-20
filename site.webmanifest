@@ -1,0 +1,16 @@
+{
+  "name": "Scrivora",
+  "short_name": "Scrivora",
+  "description": "Local-first dictation for macOS.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1ee",
+  "theme_color": "#e07a4f",
+  "icons": [
+    {
+      "src": "/Assets/ScrivoraIcon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

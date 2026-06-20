@@ -1,22 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ZIP="${1:-}"
+ARTIFACT="${1:-}"
 
-if [[ -z "$APP_ZIP" || ! -f "$APP_ZIP" ]]; then
-  echo "Usage: Scripts/notarize_release_app.sh path/to/Scrivora.zip" >&2
+if [[ -z "$ARTIFACT" || ! -f "$ARTIFACT" ]]; then
+  echo "Usage: Scripts/notarize_release_app.sh path/to/Scrivora.zip-or-dmg" >&2
   exit 2
 fi
 
-for name in APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-  if [[ -z "${!name:-}" ]]; then
-    echo "$name is required for notarization." >&2
-    exit 2
-  fi
-done
+if [[ -z "${NOTARYTOOL_KEYCHAIN_PROFILE:-}" ]]; then
+  echo "NOTARYTOOL_KEYCHAIN_PROFILE is required." >&2
+  echo "Create one with: xcrun notarytool store-credentials <profile-name> --apple-id <apple-id> --team-id <team-id>" >&2
+  exit 2
+fi
 
-xcrun notarytool submit "$APP_ZIP" \
-  --apple-id "$APPLE_ID" \
-  --team-id "$APPLE_TEAM_ID" \
-  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+xcrun notarytool submit "$ARTIFACT" \
+  --keychain-profile "$NOTARYTOOL_KEYCHAIN_PROFILE" \
   --wait

@@ -1,0 +1,6 @@
+{
+  "buildCommand": "bash Scripts/stage_site.sh",
+  "outputDirectory": ".site",
+  "installCommand": null,
+  "framework": null
+}

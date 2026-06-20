@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="scrivora-terra" x1="92" y1="92" x2="932" y2="932" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F59C68"/>
+      <stop offset="0.58" stop-color="#E07A4F"/>
+      <stop offset="1" stop-color="#BB4F2D"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="34" stdDeviation="46" flood-color="#4A281B" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="56" y="56" width="912" height="912" rx="214" fill="url(#scrivora-terra)" filter="url(#soft-shadow)"/>
+  <g fill="#FFFFFF">
+    <rect x="218" y="400" width="42" height="224" rx="21"/>
+    <rect x="319" y="306" width="53" height="412" rx="26.5"/>
+    <rect x="652" y="306" width="53" height="412" rx="26.5"/>
+    <rect x="764" y="400" width="42" height="224" rx="21"/>
+    <path d="M512 199C546 362 597 416 640 462L755 512L604 562C585 700 548 790 512 865C476 790 439 700 420 562L269 512L384 462C427 416 478 362 512 199Z"/>
+  </g>
+  <circle cx="512" cy="550.9" r="38.4" fill="#E07A4F"/>
+  <rect x="502.8" y="578.6" width="18.4" height="184.3" rx="9.2" fill="#E07A4F"/>
+</svg>

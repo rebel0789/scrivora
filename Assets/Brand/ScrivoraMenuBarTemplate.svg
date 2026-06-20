@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="scrivora-center-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+      <rect width="128" height="128" fill="white"/>
+      <circle cx="64" cy="68.9" r="4.8" fill="black"/>
+      <rect x="62.8" y="72.3" width="2.4" height="23" rx="1.2" fill="black"/>
+    </mask>
+  </defs>
+  <g fill="#1C1C1E" mask="url(#scrivora-center-cutout)">
+    <rect x="27.3" y="50" width="5.2" height="28" rx="2.6"/>
+    <rect x="39.9" y="38.3" width="6.6" height="51.5" rx="3.3"/>
+    <rect x="81.5" y="38.3" width="6.6" height="51.5" rx="3.3"/>
+    <rect x="95.5" y="50" width="5.2" height="28" rx="2.6"/>
+    <path d="M64 24.9C68.3 45.3 74.7 52 80 57.8L94.4 64L75.5 70.2C73.1 87.5 68.5 98.8 64 108.1C59.5 98.8 54.9 87.5 52.5 70.2L33.6 64L48 57.8C53.3 52 59.7 45.3 64 24.9Z"/>
+  </g>
+</svg>

@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible Scrivora issue.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the target app, trigger mode, selected model, and whether Microphone / Accessibility permissions are granted.
+      placeholder: |
+        1. Open ...
+        2. Hold Control ...
+        3. Speak ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Scrivora version
+      placeholder: "0.4.1"
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "14.7 / 15.x"
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

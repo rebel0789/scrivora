@@ -1,87 +1,108 @@
-# Scrivora Open Source Strategy
+# Open Source Strategy
 
-Date: 2026-06-12
+Scrivora’s public repo should be useful on day one: buildable source, clear
+privacy boundaries, clean model policy, and no local machine artifacts.
 
-## Position
+Use `RELEASE_STATUS.md` for the current release state.
 
-Scrivora should remain local-first:
+## First Public Cut
 
-- No cloud ASR dependency.
-- No login.
-- No subscription gate.
-- No audio saved by default.
-- No mock ASR in the real app path.
+Publish the macOS app and core Swift package together.
 
-## What Can Be Open Sourced Safely
+Include:
 
-Good candidates:
+- Local audio capture and 16 kHz mono processing.
+- Ring buffer, VAD, chunk scheduling, and recorder lifecycle.
+- FluidAudio and whisper.cpp integration points.
+- Model catalog, local model download helpers, and model-selection fallback.
+- App-aware cleanup profiles.
+- Clipboard insertion and copy fallback.
+- Local history, correction memory, privacy export, and redaction.
+- macOS menu bar shell, global triggers, and floating overlay.
+- Build scripts, release scripts, tests, website, and update templates.
 
-- Core audio ring buffer, VAD, chunk scheduling, and endpointing.
-- Text cleanup and app-aware output profiles.
-- Local storage model.
-- Privacy export format.
-- Packaging and local install scripts.
-- Benchmark harness.
-- Documentation and audit process.
+Exclude:
 
-## What Needs Care
+- Model weights.
+- Generated `.app`, `.zip`, `.dmg`, and notarization output.
+- Signing identities, certificates, keychains, profiles, and Apple credentials.
+- Local transcripts, recordings, logs, app support folders, and model caches.
+- Future payment, license-key, telemetry, or support systems.
 
-Review before publishing:
+## License Gate
 
-- Any bundled third-party model weights or model URLs.
-- FluidAudio dependency and model licensing notes.
-- whisper.cpp integration details.
-- Local signing scripts.
-- Screenshots or logs that may include user data.
+A public repository needs a real source license. Until `LICENSE` exists, people
+can read the code but do not have clear rights to use, modify, or redistribute
+it.
 
-Never publish:
+Pick one license, add `LICENSE`, then update:
 
-- `.build/dev-signing`.
-- Private keys.
-- p12 files.
-- Keychains.
-- Local history, corrections, logs, or exports.
-- Model caches if licensing does not allow redistribution.
+- `README.md`
+- `LICENSE_PLAN.md`
+- `THIRD_PARTY_NOTICES.md`
+- GitHub repository license metadata
 
-## Repository Hygiene
+## Model Policy
 
-Before open sourcing:
+The source release should not bundle speech model weights.
 
-```bash
-Scripts/audit_sensitive_files.sh
-git status --short
-git ls-files
-```
+The app may download supported models on the user’s machine. Before bundling or
+mirroring any model file, record the upstream URL, exact license, attribution
+requirements, commercial-use terms, and redistribution terms in
+`MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
 
-Also verify:
+## GitHub Repo Setup
 
-- `.gitignore` blocks signing material.
-- No local app support files are copied into the repo.
-- No personal transcript examples are in docs or tests.
-- Benchmark samples are either synthetic or explicitly safe.
+Before flipping the repo public:
 
-## Product Direction
+1. Add `LICENSE`.
+2. Keep `SECURITY.md`, `CONTRIBUTING.md`, and `.github/` templates in the repo.
+3. Run:
 
-Open source can help with:
+   ```bash
+   swift test
+   swift build --product LocalVoiceFlowApp
+   Scripts/audit_sensitive_files.sh
+   Scripts/stage_site.sh
+   ```
 
-- Local ASR backend experimentation.
-- VAD/endpointing improvements.
-- macOS paste reliability.
-- Benchmarks across hardware.
-- Privacy review.
+4. Confirm `git ls-files` does not include generated binaries, model weights,
+   transcripts, recordings, local logs, app bundles, zips, DMGs, keychains,
+   certificates, profiles, or signing passwords.
+5. Push to the intended GitHub repository.
+6. Enable GitHub Pages or Vercel only after the domain target is confirmed.
 
-Keep proprietary or delayed until stable:
+## Binary Release Boundary
 
-- Brand/design assets.
-- Growth/positioning copy.
-- Any future paid packaging or update channel.
+Open source does not make the Mac app safe to download.
 
-## Next Open Source Steps
+Public DMG and in-app update releases require:
 
-1. Add license file.
-2. Add third-party notices.
-3. Add model license summary.
-4. Add contribution guide.
-5. Add security policy.
-6. Add reproducible setup script for Parakeet and whisper.cpp.
-7. Run a clean clone build.
+- Developer ID Application signing.
+- Hardened runtime.
+- Notarization.
+- Stapling.
+- Gatekeeper verification on a clean Mac.
+- A final updater ZIP URL, byte size, and SHA-256.
+
+Keep `updates/stable.example.json` as a template. Publish `updates/stable.json`
+only after it is generated from the exact uploaded updater ZIP.
+
+## Public Positioning
+
+Say this:
+
+- Scrivora is private voice writing for macOS.
+- Core dictation runs locally and does not require an account, card, or cloud
+  speech API.
+- Model downloads and update checks are explicit network actions.
+- The source repo is public once the license is added.
+- Public Mac downloads use the signed release channel.
+
+Do not claim this until verified:
+
+- App Store availability.
+- Live auto-updates.
+- Notarized public download.
+- Bundled model redistribution rights.
+- Security bounty or guaranteed response SLA.

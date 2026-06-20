@@ -59,6 +59,7 @@ public struct ASRModelInfo: Identifiable, Codable, Equatable, Sendable {
     public var engineIdentifier: String
     public var localFilename: String
     public var downloadURL: URL?
+    public var downloadSHA256: String?
     public var estimatedSizeMB: Int
     public var estimatedMemoryMB: Int
     public var speedLabel: String
@@ -73,6 +74,7 @@ public struct ASRModelInfo: Identifiable, Codable, Equatable, Sendable {
         engineIdentifier: String,
         localFilename: String,
         downloadURL: URL?,
+        downloadSHA256: String? = nil,
         estimatedSizeMB: Int,
         estimatedMemoryMB: Int,
         speedLabel: String,
@@ -86,6 +88,7 @@ public struct ASRModelInfo: Identifiable, Codable, Equatable, Sendable {
         self.engineIdentifier = engineIdentifier
         self.localFilename = localFilename
         self.downloadURL = downloadURL
+        self.downloadSHA256 = downloadSHA256
         self.estimatedSizeMB = estimatedSizeMB
         self.estimatedMemoryMB = estimatedMemoryMB
         self.speedLabel = speedLabel

@@ -79,11 +79,22 @@ def load_manifest(path: Path) -> list[dict]:
             if not audio.is_absolute():
                 audio = (path.parent / audio).resolve()
             rows.append({
-                "id": row["id"],
+                "id": safe_manifest_id(row["id"]),
                 "audio": audio,
                 "reference": row["reference"],
             })
         return rows
+
+
+def safe_manifest_id(raw_id: str) -> str:
+    sample_id = raw_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", sample_id):
+        raise SystemExit(
+            f"manifest id {raw_id!r} is invalid; use only letters, numbers, dots, underscores, and hyphens"
+        )
+    if ".." in sample_id or "/" in sample_id or "\\" in sample_id:
+        raise SystemExit(f"manifest id {raw_id!r} must not contain path traversal")
+    return sample_id
 
 
 def run_process(command: list[str], timeout: int = 180) -> tuple[str, str, float]:
@@ -107,7 +118,10 @@ def run_command(command: list[str], timeout: int = 180) -> tuple[str, float]:
 
 def run_whisper(sample: dict, model_path: Path, whisper_cli: str) -> tuple[str, float]:
     with tempfile.TemporaryDirectory(prefix="lvf-bench-") as temporary:
-        output_base = Path(temporary) / sample["id"]
+        temporary_root = Path(temporary).resolve()
+        output_base = (temporary_root / sample["id"]).resolve()
+        if output_base.parent != temporary_root:
+            raise RuntimeError("benchmark output path escaped the temporary directory")
         command = [
             whisper_cli,
             "-m", str(model_path),

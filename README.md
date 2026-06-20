@@ -1,362 +1,161 @@
 # Scrivora
 
-Scrivora — speak, and your Mac writes.
+Scrivora is a local-first dictation app for macOS. Speak, and your Mac writes.
 
-Private dictation for Mac. Local AI. No subscription.
+The app records microphone audio, transcribes it locally, cleans the text, and
+pastes the result into the focused app. Core dictation is designed to work
+without a cloud speech API.
 
-Scrivora is a native macOS, local-first dictation assistant. It is built as a Swift Package with a macOS SwiftUI menu bar executable and a tested core library. The repository and Swift module names still use `LocalVoiceFlow` internally while the public product name is Scrivora.
+> Status: private GitHub release staging is active at
+> `https://github.com/rebel0789/scrivora`. The source tree is prepared for
+> review; the public license decision, clean-clone check, and Developer ID
+> signing/notarization remain release gates for a public Mac download. See
+> `RELEASE_STATUS.md`.
 
-The current MVP code includes:
+## What Works
 
-- Menu bar app shell.
-- Global shortcut registration plus Hold Control and Double-tap Control trigger modes.
-- Microphone permission check/request.
-- Accessibility permission check/request.
-- AVAudioEngine capture into 16 kHz mono samples.
-- In-memory audio ring buffer.
-- Energy VAD and silence endpointing.
-- Rolling chunk scheduler.
-- Floating dictation overlay.
-- ASR/LLM protocols.
-- FluidAudio Parakeet V2/V3 backend for fast Apple Silicon local ASR.
-- Pseudo-streaming Parakeet partial transcription on a rolling in-memory window.
-- Local whisper.cpp-compatible server and command backends as fallback.
-- Deterministic text cleanup, dictation commands, and app-aware output profiles.
-- Accessibility insertion attempt plus clipboard paste fallback.
-- Local JSON settings/history stores.
-- Local model catalog and model storage.
-- Debug/performance metrics and local JSONL latency logs.
-- First-run privacy profiles with Maximum Privacy as the fresh-install default.
-- Structured privacy export and redacted debug export.
-- Sensitive-file audit and dev-signing cleanup scripts.
-- Swift 6 `Testing` coverage for core pipeline behavior.
+- macOS menu bar app.
+- Hold Control, double-tap Control, and configurable global shortcut triggers.
+- AVAudioEngine capture with 16 kHz mono audio processing.
+- Local FluidAudio Parakeet V2/V3 transcription.
+- Local whisper.cpp fallback for CLI or server-based transcription.
+- App-aware text cleanup profiles.
+- Clipboard paste into the focused app, with fallback behavior.
+- Privacy controls for transcript storage and redacted export.
+- Models screen with Parakeet V3 as the default local path and supported
+  whisper.cpp downloads.
+- Menu bar quick actions for dictation, model switching, latest transcript copy,
+  History, updates, privacy mode, and data-folder access.
+- Static website and update metadata templates for `https://scrivora.me`.
+- Unit coverage for core settings, storage, model selection, cleanup, export,
+  and trigger behavior.
+
+Some internal Swift target names and migration paths still use the earlier
+project name for compatibility. The public app name, bundle ID, website, and
+release docs use Scrivora.
 
 ## Requirements
 
-- macOS 14 or later.
-- Swift 6.1+.
-- Xcode 16+ recommended for a proper app bundle, microphone usage description, signing, and notarization.
-- Command Line Tools are enough for `swift test` and `swift run`, but full Xcode is needed for production packaging.
+- macOS 14 or newer.
+- Swift 6.1 or newer.
+- Xcode 16 or newer for app bundle signing and local install flows.
 
-## Build And Test
+## Build
 
 ```bash
 swift test
 swift build --product LocalVoiceFlowApp
 ```
 
-Run the app shell:
-
-```bash
-swift run LocalVoiceFlowApp
-```
-
-For UI-only testing without a local ASR model:
+Run the app with mock ASR when you want to test the UI and permissions without a
+large local model:
 
 ```bash
 LOCALVOICEFLOW_USE_MOCK_ASR=1 swift run LocalVoiceFlowApp
 ```
 
-## App Bundle
-
-Create a local signed development app bundle:
-
-```bash
-Scripts/package_dev_app.sh
-open .build/Scrivora.app
-```
-
-The bundle script writes an `Info.plist` with microphone usage text and signs with the local development identity when available. If no local identity exists, it creates one under `.build/dev-signing`.
-
-For day-to-day testing with microphone and Accessibility permissions, install the app to a stable path first:
+Build and install a local app bundle:
 
 ```bash
 Scripts/install_app_bundle.sh
-open "/Applications/Scrivora.app"
+open /Applications/Scrivora.app
 ```
 
-Grant microphone and Accessibility permissions to `/Applications/Scrivora.app`, not the temporary `.build` copy. The bundle ID remains `app.localvoiceflow.mvp` and the local development signing identity remains `LocalVoiceFlow Development` to keep the macOS permission identity stable during the public rename.
+## Local Models
 
-The packaging script creates and uses a local self-signed code-signing identity named `LocalVoiceFlow Development` when no Apple Developer ID identity is available. This gives macOS privacy permissions a stable designated requirement across rebuilds:
+Scrivora does not commit speech model weights to this repo.
 
-```text
-identifier "app.localvoiceflow.mvp" and certificate root = <LocalVoiceFlow Development certificate>
-```
-
-Vowen and Wispr Flow avoid repeated permission prompts by using notarized Developer ID signatures. The local development identity is the closest equivalent for this unsigned MVP; for production, replace it with a real Developer ID Application certificate.
-
-Development signing material is intentionally kept out of normal app support:
-
-```text
-.build/dev-signing
-```
-
-If an older build created signing files in `~/Library/Application Support/LocalVoiceFlow/Signing`, move them with:
-
-```bash
-Scripts/clean_dev_signing_material.sh --move
-```
-
-Audit local sensitive files without printing file contents:
-
-```bash
-Scripts/audit_sensitive_files.sh
-```
-
-## Privacy Profiles
-
-Fresh installs now default to `Maximum Privacy`:
-
-- Privacy Mode on.
-- Transcript history off.
-- Learning memory off.
-- Performance logs on, with target app and bundle metadata off.
-- Raw audio off.
-- Analytics off.
-
-The first app launch asks the user to choose one local privacy profile:
-
-- `Maximum Privacy`: no transcript history, no learning memory, no target app metadata.
-- `Balanced Local Memory`: saves transcript history and correction memory locally.
-- `Debug Mode`: saves local diagnostics and target app metadata for troubleshooting.
-
-Offline Mode blocks remote model downloads from the app. It still allows local model files and local helper services such as `whisper-server` bound to `127.0.0.1`.
-
-## Privacy Export
-
-Settings -> Privacy includes export presets:
-
-- Settings only.
-- History only.
-- Learning only.
-- Performance logs only.
-- Full local package.
-- Redacted debug package.
-
-The redacted debug package removes transcript text, correction text, target app metadata, target bundle identifiers, and local filesystem paths. It does not export model files or signing material.
-
-## Local ASR Setup
-
-### Recommended: FluidAudio Parakeet
-
-Parakeet is the recommended local accuracy path for Apple Silicon testing. It keeps the model loaded in-process, transcribes the app's in-memory 16 kHz samples, and does not write app microphone audio to disk.
-
-Download/select Parakeet V2 from the app:
-
-1. Open Scrivora.
-2. Open Settings.
-3. In ASR Models, click `Download` on `Parakeet V2 English`.
-4. Leave the app open while CoreML downloads and compiles the model.
-5. Select `Parakeet V2 English`.
-
-Or download from the terminal:
-
-```bash
-Scripts/download_fluidaudio_model.sh v2
-```
-
-For V3 multilingual:
+FluidAudio Parakeet is the main local speech model path:
 
 ```bash
 Scripts/download_fluidaudio_model.sh v3
+Scripts/download_fluidaudio_model.sh v2
 ```
 
-If a Parakeet download was interrupted, run the same command again. The script checks the FluidAudio cache and removes an incomplete model folder before retrying.
-
-The script builds the FluidAudio CLI from an ignored `Vendor/FluidAudio` checkout if `fluidaudiocli` is not already installed. That checkout is only a local dependency/build cache.
-
-Parakeet models are stored by FluidAudio in:
-
-```text
-~/Library/Application Support/FluidAudio/Models
-```
-
-V0.3 fresh installs default to `Parakeet V2 English` for Instant mode. V3 remains available as the Balanced multilingual option.
-
-### Fallback: whisper.cpp
-
-The MVP runner includes two local whisper.cpp-compatible backends:
-
-- Preferred: `whisper-server`, a local helper bound to `127.0.0.1` that keeps the model loaded.
-- Fallback: `whisper-cli`, a command backend that launches per transcription.
-
-Install or build whisper.cpp, then point Scrivora to the executable path in settings if auto-detection does not find Homebrew paths.
-
-Bootstrap whisper.cpp and a GGML model:
+whisper.cpp is available as a local fallback:
 
 ```bash
 Scripts/bootstrap_whisper_cpp.sh base.en-q5_1
-```
-
-Only download a model:
-
-```bash
-Scripts/download_whisper_model.sh base.en-q5_1
-```
-
-Expected executable paths:
-
-- `/opt/homebrew/bin/whisper-cli`
-- `/opt/homebrew/bin/whisper-server`
-- `/usr/local/bin/whisper-cli`
-- `/usr/local/bin/whisper-server`
-- `/opt/homebrew/bin/whisper-cpp`
-- `/usr/local/bin/whisper-cpp`
-
-The persistent `whisper-server` bridge keeps the model loaded between utterances. The CLI bridge remains as emergency fallback. The FluidAudio Parakeet backend is now the preferred low-latency in-process path; whisper.cpp remains useful for compatibility and fallback.
-
-For the default app path, use:
-
-- Whisper binary: `/opt/homebrew/bin/whisper-cli`
-- Whisper server: `/opt/homebrew/bin/whisper-server`
-- Model path: leave blank if the selected model was downloaded into `~/Library/Application Support/LocalVoiceFlow/Models`
-- Default model file: `ggml-base.en-q5_1.bin`
-
-For better English with accents, casual speech, and imperfect microphone input, use the `small.en-q5_1` model:
-
-```bash
 Scripts/download_whisper_model.sh small.en-q5_1
 ```
 
-Then select `Accurate` in the Models section. `base.en-q5_1` is fast, but it is noticeably worse for slang, accent variation, and noisy speech.
+Before publishing a public release, verify the upstream license and
+redistribution terms for every model, binary, and generated artifact. See
+`MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
 
-## Benchmark Real Voice Samples
+## Privacy Model
 
-Prompts for human voice testing live in:
+Scrivora is designed around local processing.
 
-```text
-BenchmarkSamples/reading-prompts.csv
-```
+- Audio capture stays on the Mac for local speech transcription.
+- Transcript history is disabled on a fresh install unless the user enables it.
+- Stored transcripts can be exported with redaction.
+- Offline Mode is available for model-backed transcription that is already
+  present on the machine.
+- User data is stored under `~/Library/Application Support/LocalVoiceFlow/`.
 
-Record benchmark samples:
+Do not commit local model caches, transcripts, logs, recordings, app support
+data, signing material, keychains, or generated release artifacts.
 
-```bash
-Scripts/record_benchmark_samples.sh
-```
+## Verification
 
-Compare Whisper and Parakeet on the manifest:
-
-```bash
-Scripts/benchmark_asr.py \
-  --manifest BenchmarkSamples/manifest.csv \
-  --include-fluidaudio \
-  --fluidaudio-model-version v2 \
-  --fluidaudio-model-version v3 \
-  --whisper-model ggml-small.en-q5_1.bin
-```
-
-See `ACCURACY_TEST.md` for the live app test matrix and what to report when an app-specific profile is wrong.
-
-## App-Aware Output Profiles
-
-By default, Cleanup uses `Automatic` output profile routing:
-
-- Coding and terminal apps use `Pragmatic` cleanup.
-- AI agent/chat apps use `Agent` cleanup.
-- Mail clients use `Email` cleanup.
-- Notes, TextEdit, browsers, and unknown apps use `General` cleanup.
-
-You can override this in Settings → Cleanup → Output profile. Browser tab-specific routing is not implemented yet; Chrome/Safari/Arc/Firefox are treated as browsers unless a future Accessibility or browser-title integration identifies Gmail, Docs, or another site.
-
-## Real ASR Smoke Test
+Use the narrow checks first:
 
 ```bash
-say -v Samantha "hello local voice flow this is a local dictation test" -o /tmp/localvoiceflow-test.aiff
-afconvert -f WAVE -d LEI16@16000 /tmp/localvoiceflow-test.aiff /tmp/localvoiceflow-test.wav
-LOCALVOICEFLOW_WHISPER_SERVER=/opt/homebrew/bin/whisper-server \
-LOCALVOICEFLOW_WHISPER_CLI=/opt/homebrew/bin/whisper-cli \
-LOCALVOICEFLOW_WHISPER_MODEL="$HOME/Library/Application Support/LocalVoiceFlow/Models/ggml-base.en-q5_1.bin" \
-LOCALVOICEFLOW_TEST_WAV=/tmp/localvoiceflow-test.wav \
-swift test --filter WhisperCppIntegrationTests
+swift test
+swift build --product LocalVoiceFlowApp
+Scripts/audit_sensitive_files.sh
+Scripts/stage_site.sh
 ```
 
-## Data Locations
+Before a public Mac download, also run the clean-Mac install test, verify
+Microphone and Accessibility permissions from a fresh user profile, and confirm
+Gatekeeper accepts the signed artifact.
 
-Local app data:
+## Website And Updates
+
+The static website is prepared for:
 
 ```text
-~/Library/Application Support/LocalVoiceFlow
+https://scrivora.me
 ```
 
-Subfolders:
-
-- `Models`
-- `Settings`
-- `History`
-- `Learning`
-- `Logs`
-
-Raw audio is not stored by default.
-
-## Current Limitations
-
-- The SwiftPM app is a working development runner, not a notarized production `.app`.
-- WhisperKit SDK integration is documented in `RESEARCH.md` and `TECHNICAL_DESIGN.md` but not linked into the package yet, to keep the core build independent of a full Xcode install.
-- FluidAudio Parakeet pseudo-streaming partials are implemented. True FluidAudio streaming/EOU remains future work.
-- First Parakeet load can be slow because CoreML compiles the model; warm transcription should be much faster.
-- The whisper.cpp CLI/server fallback still writes a temporary WAV for final ASR. The Parakeet path uses in-memory samples.
-- Direct accessibility insertion is best-effort. Clipboard paste remains the reliable path across browsers and Electron apps.
-- Clipboard restoration is configurable and defaults to 600 ms after paste.
-- App-aware cleanup currently uses foreground app name and bundle ID only. Browser tab/site-specific routing is not production-ready yet.
-- Release signing/notarization is documented in `DISTRIBUTION.md` but not production-implemented.
-
-## Local Improvement Loop
-
-Scrivora now has a local correction-memory loop inspired by agent systems that improve through durable memory and reusable skills:
-
-1. Dictate normally.
-2. Open History.
-3. Click `Correct & Learn` on a transcript.
-4. Edit the transcript to what you meant.
-5. Click `Learn Correction`.
-
-The app stores the correction locally in:
+Repository staging:
 
 ```text
-~/Library/Application Support/LocalVoiceFlow/Learning/corrections.json
+https://github.com/rebel0789/scrivora
 ```
 
-When the correction is safe to generalize, Scrivora adds a local user dictionary rule, such as:
+GitHub Pages inputs live at the repo root and under `releases/` and `updates/`.
+The production update endpoint is intended to be:
 
-- `UR` → `UI`
-- `pnchuations` → `punctuations`
-- `text edit` → `TextEdit`
+```text
+https://scrivora.me/updates/stable.json
+```
 
-This is not model retraining. Parakeet and whisper.cpp are still static ASR models. The improvement curve comes from local post-ASR adaptation: personal vocabulary, app-specific cleanup, correction history, and future per-app rules. Audio is still not saved by default.
+Only publish `updates/stable.json` after the updater ZIP has been built from a
+Developer ID signed, notarized, and stapled app. Until then, use
+`updates/stable.example.json` and `UPDATE_MANIFEST.example.json` as templates.
 
-## Manual QA
+## Release Status
 
-1. Run `swift test`.
-2. Run `LOCALVOICEFLOW_USE_MOCK_ASR=1 swift run LocalVoiceFlowApp`.
-3. Confirm the menu bar item appears.
-4. Open Settings and verify Setup, Dictation, Models, Cleanup, History, Privacy, Debug, and About sections.
-5. Grant microphone and accessibility permissions.
-6. Toggle dictation from the menu, hold Control, double-tap Control, or use the global shortcut mode.
-7. Confirm the floating overlay appears.
-8. Confirm final text is copied/pasted in mock mode.
-9. Disable history or enable Privacy Mode and verify new transcripts are not stored.
-10. Download/select Parakeet V2 or configure whisper.cpp fallback, then test real local transcription in Notes, TextEdit, and Chrome.
+Use `RELEASE_STATUS.md` as the current release source of truth.
 
-## Quickstart
+Current release tracks:
 
-1. Build the app:
-   ```bash
-   swift build --product LocalVoiceFlowApp
-   ```
-2. Package the app:
-   ```bash
-   Scripts/package_app_bundle.sh
-   ```
-3. Install to Applications:
-   ```bash
-   Scripts/install_app_bundle.sh
-   ```
-4. Open `/Applications/Scrivora.app`.
-5. Grant Microphone permission.
-6. Grant Accessibility permission.
-7. Download/select `Parakeet V2 English`.
-8. Open Notes.
-9. Hold Control or use the shortcut.
-10. Speak naturally.
-11. Release Control or stop recording.
-12. Confirm text pastes and check debug latency.
+- Source repo: staged privately on GitHub for review.
+- Website: staged locally for `https://scrivora.me` and ready to connect to the
+  GitHub release path.
+- Mac app binary: gated by Developer ID signing and notarization.
+- In-app updates: manifest template only until the signed updater ZIP exists.
+
+See:
+
+- `RELEASE_STATUS.md`
+- `RELEASE_CHECKLIST.md`
+- `OPEN_SOURCE_STRATEGY.md`
+- `LICENSE_PLAN.md`
+- `MODEL_LICENSES.md`
+- `THIRD_PARTY_NOTICES.md`
+- `SECURITY.md`
+- `CONTRIBUTING.md`

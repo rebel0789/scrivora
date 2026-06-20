@@ -19,21 +19,75 @@ public enum TriggerMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-public enum FloatingOverlayStyle: String, Codable, CaseIterable, Sendable {
-    case liquidFlow
-    case spectrumBloom
-    case minimalSignal
+public enum PasteTargetBehavior: String, Codable, CaseIterable, Sendable {
+    case focusedAtStart
+    case focusedAtEnd
+    case copyOnly
 
     public var displayName: String {
         switch self {
+        case .focusedAtStart: "Focused at start"
+        case .focusedAtEnd: "Focused at end"
+        case .copyOnly: "Copy only"
+        }
+    }
+}
+
+public enum PasteStrategy: String, Codable, CaseIterable, Sendable {
+    case instant
+    case fast
+    case balanced
+    case safe
+    case custom
+    case copyOnly
+
+    public var displayName: String {
+        switch self {
+        case .instant: "Instant"
+        case .fast: "Fast"
+        case .balanced: "Balanced"
+        case .safe: "Safe"
+        case .custom: "Custom"
+        case .copyOnly: "Copy only"
+        }
+    }
+
+    public func restoreDelayMilliseconds(customDelay: Int) -> Int? {
+        switch self {
+        case .instant, .copyOnly:
+            return nil
+        case .fast:
+            return 300
+        case .balanced:
+            return 600
+        case .safe:
+            return 1_000
+        case .custom:
+            return max(0, customDelay)
+        }
+    }
+}
+
+public enum FloatingOverlayStyle: String, Codable, CaseIterable, Sendable {
+    case voiceBars
+    case liquidFlow
+    case spectrumBloom
+    case minimalSignal
+    case signalHelix
+
+    public var displayName: String {
+        switch self {
+        case .voiceBars: "Voice Bars"
         case .liquidFlow: "Liquid Flow"
         case .spectrumBloom: "Spectrum Bloom"
         case .minimalSignal: "Minimal Signal"
+        case .signalHelix: "Signal Helix"
         }
     }
 }
 
 public enum FloatingOverlayPalette: String, Codable, CaseIterable, Sendable {
+    case scrivora
     case aurora
     case graphite
     case ink
@@ -41,10 +95,27 @@ public enum FloatingOverlayPalette: String, Codable, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
+        case .scrivora: "Scrivora"
         case .aurora: "Aurora"
         case .graphite: "Graphite"
         case .ink: "Ink"
         case .silver: "Silver"
+        }
+    }
+}
+
+public enum FloatingOverlayPlacement: String, Codable, CaseIterable, Sendable {
+    case bottom
+    case top
+    case right
+    case left
+
+    public var displayName: String {
+        switch self {
+        case .bottom: "Bottom"
+        case .top: "Top"
+        case .right: "Right"
+        case .left: "Left"
         }
     }
 }
@@ -65,6 +136,20 @@ public enum PostProcessingPreset: String, Codable, CaseIterable, Sendable {
     case codeComments
     case technicalWriting
     case customPrompt
+
+    public var displayName: String {
+        switch self {
+        case .rawTranscription: "Raw Transcription"
+        case .cleanPunctuation: "Clean Punctuation"
+        case .professionalEmail: "Professional Email"
+        case .casualMessage: "Casual Message"
+        case .bulletNotes: "Bullet Notes"
+        case .meetingNotes: "Meeting Notes"
+        case .codeComments: "Code Comments"
+        case .technicalWriting: "Technical Writing"
+        case .customPrompt: "Custom Prompt"
+        }
+    }
 }
 
 public enum DictationOutputProfile: String, Codable, CaseIterable, Sendable {
@@ -104,7 +189,7 @@ public enum PrivacyProfile: String, Codable, CaseIterable, Sendable {
         switch self {
         case .maximumPrivacy: "Maximum Privacy"
         case .balancedLocalMemory: "Balanced Local Memory"
-        case .debugMode: "Debug Mode"
+        case .debugMode: "Diagnostics"
         }
     }
 }
@@ -114,6 +199,15 @@ public enum ShortcutModifier: String, Codable, CaseIterable, Sendable {
     case control
     case option
     case shift
+
+    public var keyCapLabel: String {
+        switch self {
+        case .command: "Command"
+        case .control: "Control"
+        case .option: "Option"
+        case .shift: "Shift"
+        }
+    }
 }
 
 public struct GlobalShortcut: Codable, Equatable, Sendable {
@@ -139,6 +233,20 @@ public struct GlobalShortcut: Codable, Equatable, Sendable {
         let modifierText = modifiers.map(\.rawValue.capitalized).joined(separator: "+")
         return modifierText.isEmpty ? key.uppercased() : "\(modifierText)+\(key.uppercased())"
     }
+
+    public var keyCapLabels: [String] {
+        modifiers.map(\.keyCapLabel) + [Self.keyCapLabel(for: key)]
+    }
+
+    private static func keyCapLabel(for key: String) -> String {
+        switch key.lowercased() {
+        case "space": "Space"
+        case "return", "enter": "Return"
+        case "escape": "Esc"
+        case "control": "Control"
+        default: key.uppercased()
+        }
+    }
 }
 
 public struct DictationSettings: Codable, Equatable, Sendable {
@@ -153,12 +261,19 @@ public struct DictationSettings: Codable, Equatable, Sendable {
     public var showFloatingOverlay: Bool
     public var floatingOverlayStyle: FloatingOverlayStyle
     public var floatingOverlayPalette: FloatingOverlayPalette
+    public var floatingOverlayPlacement: FloatingOverlayPlacement
     public var autoPaste: Bool
     public var copyToClipboard: Bool
     public var restoreClipboardAfterPaste: Bool
     public var clipboardRestoreDelayMilliseconds: Int
+    public var pasteTargetBehavior: PasteTargetBehavior
+    public var pasteStrategy: PasteStrategy
     public var longDictationMode: Bool
     public var selectedInputDeviceID: String?
+
+    public var shouldObserveSilenceAutoStop: Bool {
+        autoStopOnSilence && triggerMode != .holdControl
+    }
 
     public init(
         shortcut: GlobalShortcut = .default,
@@ -166,16 +281,19 @@ public struct DictationSettings: Codable, Equatable, Sendable {
         mode: DictationMode = .toggle,
         autoStopOnSilence: Bool = true,
         silenceDurationMilliseconds: Int = 700,
-        holdControlThresholdMilliseconds: Int = 150,
+        holdControlThresholdMilliseconds: Int = 80,
         doubleTapControlIntervalMilliseconds: Int = 320,
         startStopSound: Bool = true,
         showFloatingOverlay: Bool = true,
-        floatingOverlayStyle: FloatingOverlayStyle = .liquidFlow,
-        floatingOverlayPalette: FloatingOverlayPalette = .aurora,
+        floatingOverlayStyle: FloatingOverlayStyle = .voiceBars,
+        floatingOverlayPalette: FloatingOverlayPalette = .scrivora,
+        floatingOverlayPlacement: FloatingOverlayPlacement = .bottom,
         autoPaste: Bool = true,
         copyToClipboard: Bool = true,
         restoreClipboardAfterPaste: Bool = true,
         clipboardRestoreDelayMilliseconds: Int = 600,
+        pasteTargetBehavior: PasteTargetBehavior = .focusedAtStart,
+        pasteStrategy: PasteStrategy = .balanced,
         longDictationMode: Bool = false,
         selectedInputDeviceID: String? = nil
     ) {
@@ -190,10 +308,13 @@ public struct DictationSettings: Codable, Equatable, Sendable {
         self.showFloatingOverlay = showFloatingOverlay
         self.floatingOverlayStyle = floatingOverlayStyle
         self.floatingOverlayPalette = floatingOverlayPalette
+        self.floatingOverlayPlacement = floatingOverlayPlacement
         self.autoPaste = autoPaste
         self.copyToClipboard = copyToClipboard
         self.restoreClipboardAfterPaste = restoreClipboardAfterPaste
         self.clipboardRestoreDelayMilliseconds = clipboardRestoreDelayMilliseconds
+        self.pasteTargetBehavior = pasteTargetBehavior
+        self.pasteStrategy = pasteStrategy
         self.longDictationMode = longDictationMode
         self.selectedInputDeviceID = selectedInputDeviceID
     }
@@ -210,10 +331,13 @@ public struct DictationSettings: Codable, Equatable, Sendable {
         case showFloatingOverlay
         case floatingOverlayStyle
         case floatingOverlayPalette
+        case floatingOverlayPlacement
         case autoPaste
         case copyToClipboard
         case restoreClipboardAfterPaste
         case clipboardRestoreDelayMilliseconds
+        case pasteTargetBehavior
+        case pasteStrategy
         case longDictationMode
         case selectedInputDeviceID
     }
@@ -225,16 +349,27 @@ public struct DictationSettings: Codable, Equatable, Sendable {
         self.mode = try container.decodeIfPresent(DictationMode.self, forKey: .mode) ?? .toggle
         self.autoStopOnSilence = try container.decodeIfPresent(Bool.self, forKey: .autoStopOnSilence) ?? true
         self.silenceDurationMilliseconds = try container.decodeIfPresent(Int.self, forKey: .silenceDurationMilliseconds) ?? 700
-        self.holdControlThresholdMilliseconds = try container.decodeIfPresent(Int.self, forKey: .holdControlThresholdMilliseconds) ?? 150
+        self.holdControlThresholdMilliseconds = try container.decodeIfPresent(Int.self, forKey: .holdControlThresholdMilliseconds) ?? 80
         self.doubleTapControlIntervalMilliseconds = try container.decodeIfPresent(Int.self, forKey: .doubleTapControlIntervalMilliseconds) ?? 320
         self.startStopSound = try container.decodeIfPresent(Bool.self, forKey: .startStopSound) ?? true
         self.showFloatingOverlay = try container.decodeIfPresent(Bool.self, forKey: .showFloatingOverlay) ?? true
-        self.floatingOverlayStyle = try container.decodeIfPresent(FloatingOverlayStyle.self, forKey: .floatingOverlayStyle) ?? .liquidFlow
-        self.floatingOverlayPalette = try container.decodeIfPresent(FloatingOverlayPalette.self, forKey: .floatingOverlayPalette) ?? .aurora
+        self.floatingOverlayStyle = try container.decodeIfPresent(FloatingOverlayStyle.self, forKey: .floatingOverlayStyle) ?? .voiceBars
+        self.floatingOverlayPalette = try container.decodeIfPresent(FloatingOverlayPalette.self, forKey: .floatingOverlayPalette) ?? .scrivora
+        self.floatingOverlayPlacement = try container.decodeIfPresent(FloatingOverlayPlacement.self, forKey: .floatingOverlayPlacement) ?? .bottom
         self.autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? true
         self.copyToClipboard = try container.decodeIfPresent(Bool.self, forKey: .copyToClipboard) ?? true
         self.restoreClipboardAfterPaste = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboardAfterPaste) ?? true
         self.clipboardRestoreDelayMilliseconds = try container.decodeIfPresent(Int.self, forKey: .clipboardRestoreDelayMilliseconds) ?? 600
+        self.pasteTargetBehavior = try container.decodeIfPresent(PasteTargetBehavior.self, forKey: .pasteTargetBehavior) ?? .focusedAtStart
+        if let pasteStrategy = try container.decodeIfPresent(PasteStrategy.self, forKey: .pasteStrategy) {
+            self.pasteStrategy = pasteStrategy
+        } else if !self.autoPaste {
+            self.pasteStrategy = .copyOnly
+        } else if !self.restoreClipboardAfterPaste {
+            self.pasteStrategy = .instant
+        } else {
+            self.pasteStrategy = .balanced
+        }
         self.longDictationMode = try container.decodeIfPresent(Bool.self, forKey: .longDictationMode) ?? false
         self.selectedInputDeviceID = try container.decodeIfPresent(String.self, forKey: .selectedInputDeviceID)
     }
@@ -252,9 +387,9 @@ public struct ModelSettings: Codable, Equatable, Sendable {
     public var preferPersistentWhisperServer: Bool
 
     public init(
-        selectedASRModelID: String = "fluidaudio-parakeet-v2",
+        selectedASRModelID: String = "fluidaudio-parakeet-v3",
         selectedLLMModelID: String? = nil,
-        selectedASRMode: ASRUserMode = .instant,
+        selectedASRMode: ASRUserMode = .balanced,
         useMetalAcceleration: Bool = true,
         preferQuantizedModels: Bool = true,
         whisperExecutablePath: String? = nil,
@@ -287,9 +422,9 @@ public struct ModelSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.selectedASRModelID = try container.decodeIfPresent(String.self, forKey: .selectedASRModelID) ?? "fluidaudio-parakeet-v2"
+        self.selectedASRModelID = try container.decodeIfPresent(String.self, forKey: .selectedASRModelID) ?? "fluidaudio-parakeet-v3"
         self.selectedLLMModelID = try container.decodeIfPresent(String.self, forKey: .selectedLLMModelID)
-        self.selectedASRMode = try container.decodeIfPresent(ASRUserMode.self, forKey: .selectedASRMode) ?? .instant
+        self.selectedASRMode = try container.decodeIfPresent(ASRUserMode.self, forKey: .selectedASRMode) ?? .balanced
         self.useMetalAcceleration = try container.decodeIfPresent(Bool.self, forKey: .useMetalAcceleration) ?? true
         self.preferQuantizedModels = try container.decodeIfPresent(Bool.self, forKey: .preferQuantizedModels) ?? true
         self.whisperExecutablePath = try container.decodeIfPresent(String.self, forKey: .whisperExecutablePath)
@@ -463,22 +598,64 @@ public struct PrivacySettings: Codable, Equatable, Sendable {
     }
 }
 
+public struct UpdateSettings: Codable, Equatable, Sendable {
+    public var automaticChecksEnabled: Bool
+    public var manifestURLString: String
+    public var includePrerelease: Bool
+    public var lastCheckedAt: Date?
+    public var dismissedVersion: String?
+
+    public init(
+        automaticChecksEnabled: Bool = true,
+        manifestURLString: String = "",
+        includePrerelease: Bool = false,
+        lastCheckedAt: Date? = nil,
+        dismissedVersion: String? = nil
+    ) {
+        self.automaticChecksEnabled = automaticChecksEnabled
+        self.manifestURLString = manifestURLString
+        self.includePrerelease = includePrerelease
+        self.lastCheckedAt = lastCheckedAt
+        self.dismissedVersion = dismissedVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case automaticChecksEnabled
+        case manifestURLString
+        case includePrerelease
+        case lastCheckedAt
+        case dismissedVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.automaticChecksEnabled = try container.decodeIfPresent(Bool.self, forKey: .automaticChecksEnabled) ?? true
+        self.manifestURLString = try container.decodeIfPresent(String.self, forKey: .manifestURLString) ?? ""
+        self.includePrerelease = try container.decodeIfPresent(Bool.self, forKey: .includePrerelease) ?? false
+        self.lastCheckedAt = try container.decodeIfPresent(Date.self, forKey: .lastCheckedAt)
+        self.dismissedVersion = try container.decodeIfPresent(String.self, forKey: .dismissedVersion)
+    }
+}
+
 public struct AppSettings: Codable, Equatable, Sendable {
     public var dictation: DictationSettings
     public var models: ModelSettings
     public var postProcessing: PostProcessingSettings
     public var privacy: PrivacySettings
+    public var updates: UpdateSettings
 
     public init(
         dictation: DictationSettings = DictationSettings(),
         models: ModelSettings = ModelSettings(),
         postProcessing: PostProcessingSettings = PostProcessingSettings(),
-        privacy: PrivacySettings = PrivacySettings()
+        privacy: PrivacySettings = PrivacySettings(),
+        updates: UpdateSettings = UpdateSettings()
     ) {
         self.dictation = dictation
         self.models = models
         self.postProcessing = postProcessing
         self.privacy = privacy
+        self.updates = updates
     }
 
     public static let `default` = AppSettings()
@@ -488,6 +665,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case models
         case postProcessing
         case privacy
+        case updates
     }
 
     public init(from decoder: Decoder) throws {
@@ -496,11 +674,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.models = try container.decodeIfPresent(ModelSettings.self, forKey: .models) ?? ModelSettings()
         self.postProcessing = try container.decodeIfPresent(PostProcessingSettings.self, forKey: .postProcessing) ?? PostProcessingSettings()
         self.privacy = try container.decodeIfPresent(PrivacySettings.self, forKey: .privacy) ?? PrivacySettings()
+        self.updates = try container.decodeIfPresent(UpdateSettings.self, forKey: .updates) ?? UpdateSettings()
     }
 }
 
 public enum NetworkAccessPolicy: Sendable {
     public static func canDownloadRemoteModel(privacy: PrivacySettings) -> Bool {
+        !privacy.offlineMode
+    }
+
+    public static func canCheckRemoteUpdates(privacy: PrivacySettings) -> Bool {
         !privacy.offlineMode
     }
 

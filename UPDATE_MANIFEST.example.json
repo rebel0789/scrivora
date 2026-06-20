@@ -1,0 +1,17 @@
+{
+  "appID": "me.scrivora.app",
+  "archiveSizeBytes": 123456789,
+  "build": "1",
+  "channel": "stable",
+  "critical": false,
+  "downloadURL": "https://github.com/rebel0789/scrivora/releases/download/v0.4.1/Scrivora-0.4.1.zip",
+  "minimumSystemVersion": "14.0",
+  "notes": [
+    "Menu bar model switching and last transcript copy.",
+    "Parakeet V3 default with improved model management.",
+    "Verified in-app update flow and release metadata."
+  ],
+  "releaseNotesURL": "https://scrivora.me/releases/v0.4.1.html",
+  "sha256": "REPLACE_WITH_RELEASE_ZIP_SHA256",
+  "version": "0.4.1"
+}

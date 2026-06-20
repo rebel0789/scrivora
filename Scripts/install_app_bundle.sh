@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_APP="$ROOT/.build/Scrivora.app"
+LEGACY_BUILD_APP="$ROOT/.build/LocalVoiceFlowApp.app"
 DEFAULT_INSTALL_DIR="/Applications"
 if [[ ! -w "$DEFAULT_INSTALL_DIR" ]]; then
   DEFAULT_INSTALL_DIR="$HOME/Applications"
@@ -11,12 +12,14 @@ INSTALL_DIR="${LOCALVOICEFLOW_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 INSTALLED_APP="$INSTALL_DIR/Scrivora.app"
 
 pkill -f "$SOURCE_APP/Contents/MacOS/LocalVoiceFlowApp" >/dev/null 2>&1 || true
+pkill -f "$LEGACY_BUILD_APP/Contents/MacOS/LocalVoiceFlowApp" >/dev/null 2>&1 || true
 pkill -f "$INSTALLED_APP/Contents/MacOS/LocalVoiceFlowApp" >/dev/null 2>&1 || true
 pkill -f "/Applications/LocalVoiceFlow.app/Contents/MacOS/LocalVoiceFlowApp" >/dev/null 2>&1 || true
 pkill -x LocalVoiceFlowApp >/dev/null 2>&1 || true
 pkill -f '/whisper-server -m .*/Library/Application Support/LocalVoiceFlow/Models/ggml-.*\\.bin' >/dev/null 2>&1 || true
 
 "$ROOT/Scripts/package_app_bundle.sh" >/dev/null
+rm -rf "$LEGACY_BUILD_APP"
 
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALLED_APP"

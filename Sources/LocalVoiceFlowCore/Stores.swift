@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct LocalFileStore: Sendable {
@@ -306,18 +307,90 @@ public struct ModelStorage: Sendable {
 public struct ModelDownloader: Sendable {
     public init() {}
 
-    public func download(model: ASRModelInfo, to storage: ModelStorage) async throws -> URL {
+    public func download(
+        model: ASRModelInfo,
+        to storage: ModelStorage,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> URL {
         guard let url = model.downloadURL else {
             throw LocalVoiceFlowError.modelUnavailable("No download URL for \(model.displayName).")
         }
+        guard let expectedSHA256 = model.downloadSHA256?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !expectedSHA256.isEmpty
+        else {
+            throw LocalVoiceFlowError.modelUnavailable("No pinned SHA-256 is configured for \(model.displayName).")
+        }
         try FileManager.default.createDirectory(at: storage.directory, withIntermediateDirectories: true)
         let destination = storage.localURL(for: model)
-        let (temporaryURL, _) = try await URLSession.shared.download(from: url)
+        progress?(0.01)
+        let expectedByteCount = Int64(model.estimatedSizeMB) * 1_000_000
+        let delegate = ModelDownloadProgressDelegate(
+            expectedByteCount: expectedByteCount > 0 ? expectedByteCount : nil,
+            progress: progress
+        )
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (temporaryURL, response) = try await session.download(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw LocalVoiceFlowError.modelUnavailable("Model download failed with HTTP \(http.statusCode).")
+        }
+        progress?(0.98)
+        try ModelIntegrity.verifySHA256(of: temporaryURL, expected: expectedSHA256)
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        progress?(1)
         return destination
+    }
+}
+
+private final class ModelDownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let expectedByteCount: Int64?
+    private let progress: (@Sendable (Double) -> Void)?
+
+    init(expectedByteCount: Int64?, progress: (@Sendable (Double) -> Void)?) {
+        self.expectedByteCount = expectedByteCount
+        self.progress = progress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let denominator = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expectedByteCount
+        guard let denominator, denominator > 0 else { return }
+        let transferProgress = Double(totalBytesWritten) / Double(denominator)
+        progress?(min(0.97, max(0.01, transferProgress)))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {}
+}
+
+enum ModelIntegrity {
+    static func verifySHA256(of url: URL, expected: String) throws {
+        let actual = try sha256Hex(of: url)
+        let normalizedExpected = expected
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard actual == normalizedExpected else {
+            throw LocalVoiceFlowError.modelUnavailable("Model SHA-256 mismatch. Expected \(normalizedExpected), got \(actual).")
+        }
+    }
+
+    static func sha256Hex(of url: URL) throws -> String {
+        let data = try Data(contentsOf: url)
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 

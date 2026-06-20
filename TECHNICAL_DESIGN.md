@@ -7,7 +7,7 @@ Scrivora is split into a pure Swift core library and a macOS SwiftUI app target.
 - `LocalVoiceFlowCore`: pipeline logic, model metadata, settings/history stores, text cleanup, diagnostics, ASR/LLM protocols, and testable algorithms.
 - `LocalVoiceFlowApp`: SwiftUI menu bar app, AppKit permission and insertion services, AVAudioEngine capture, global hotkey registration, and views.
 
-The public product name is Scrivora. Swift target and module names remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.3 to avoid a risky internal rename while preserving the working app and macOS permission continuity.
+The public product name is Scrivora. Swift target and module names remain `LocalVoiceFlowCore` and `LocalVoiceFlowApp` in V0.4 to avoid a risky internal rename while preserving the working app and macOS permission continuity.
 
 This keeps model/runtime-specific code behind protocols and keeps most behavior testable with `swift test`.
 
@@ -41,7 +41,7 @@ Trigger mode
 - `isLoaded`
 - `modelInfo`
 
-V0.3 default is FluidAudio Parakeet V2 in-process batch ASR with pseudo-streaming partials. Persistent `whisper-server` remains compatible fallback and `whisper-cli` remains emergency fallback. True streaming/EOU should be implemented through FluidAudio streaming APIs when benchmarked and stable.
+V0.4 default is FluidAudio Parakeet V2 in-process batch ASR with pseudo-streaming partials. Persistent `whisper-server` remains compatible fallback and `whisper-cli` remains emergency fallback. True streaming/EOU should be implemented through FluidAudio streaming APIs when benchmarked and stable.
 
 ## LLM Boundary
 
@@ -53,7 +53,7 @@ Use local JSON files under:
 
 `~/Library/Application Support/LocalVoiceFlow`
 
-This storage path remains unchanged in V0.3 so existing settings, history, and downloaded whisper.cpp models are preserved during the public rename to Scrivora.
+This storage path remains unchanged in V0.4 so existing settings, history, and downloaded whisper.cpp models are preserved during the public rename to Scrivora.
 
 Subfolders:
 
@@ -63,7 +63,7 @@ Subfolders:
 - `Logs`
 - `Settings`
 
-No raw audio is stored by default. Temporary WAV files for command-line backend testing are written to the system temporary directory and deleted after transcription.
+No raw audio is stored by default. Temporary WAV files for whisper.cpp command-line and local-server fallback testing are written to the system temporary directory through `TempAudioFileManager` using managed `ScrivoraTempAudio-*` filenames. The app deletes those files after transcription and removes stale managed leftovers during startup.
 
 Fresh installs default to Maximum Privacy: transcript history and learning memory off, target app metadata off, performance logs on, and audio saving off. Existing users are prompted to choose a privacy profile when migrated because older settings do not contain `firstRunPrivacyChoiceCompleted`.
 
@@ -73,14 +73,14 @@ Structured export is implemented through `PrivacyExportService`. Redacted debug 
 
 Insertion strategy:
 
-1. Try accessibility insertion only when the focused element supports text value updates.
-2. Fall back to clipboard paste.
-3. Preserve existing pasteboard items.
-4. Set transcript as plain text.
-5. Simulate Command-V.
-6. Restore previous pasteboard items after a short delay if configured.
+1. Preserve existing pasteboard items.
+2. Set the final transcript as plain text before any paste attempt.
+3. Resolve the paste target from the configured behavior: focused app at dictation start, focused app at dictation end, or copy-only.
+4. If no eligible target exists, Accessibility is not trusted, or focus changed under the default start-target behavior, leave the transcript copied and record a paste fallback reason.
+5. Simulate Command-V only after target validation.
+6. Restore previous pasteboard items after the configured strategy delay when enabled.
 
-The default MVP should prefer reliability over aggressive direct insertion because web editors, secure fields, Terminal, Electron apps, and custom text components vary widely.
+The default MVP should prefer reliability over aggressive direct insertion because web editors, secure fields, Terminal, Electron apps, and custom text components vary widely. Scrivora does not currently use direct AX value mutation as the primary insertion path.
 
 ## Permissions
 
@@ -103,6 +103,8 @@ Record:
 - Model warmup time.
 - First partial latency.
 - Paste method.
+- Clipboard snapshot, clipboard set, focus check, Command-V post, visible insert, restore delay, restore duration, total paste pipeline, and background restore timing.
+- Paste target behavior, paste fallback, focus-change state, and failure reason.
 
 One JSONL record per dictation is appended to `Logs/dictation-performance.jsonl`. Transcript text is not logged.
 

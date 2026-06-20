@@ -1,0 +1,62 @@
+name: Publish Website
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "index.html"
+      - "CNAME"
+      - ".nojekyll"
+      - "robots.txt"
+      - "sitemap.xml"
+      - "site.webmanifest"
+      - "tokens.css"
+      - "Assets/**"
+      - "releases/**"
+      - "updates/**"
+      - "Scripts/stage_site.sh"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Stage site
+        run: bash Scripts/stage_site.sh
+
+      - name: Validate staged files
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          for path in [Path(".site/index.html"), Path(".site/releases/v0.4.1.html")]:
+              HTMLParser().feed(path.read_text())
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ".site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

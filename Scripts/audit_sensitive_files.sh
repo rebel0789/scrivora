@@ -11,8 +11,11 @@ echo "App support: $APP_SUPPORT"
 echo
 
 echo "Signing material candidates:"
+if [[ -d "$ROOT/.build/dev-signing" ]]; then
+  find "$ROOT/.build/dev-signing" -type f -print 2>/dev/null || true
+fi
 find "$ROOT" "$APP_SUPPORT" \
-  \( -path "$ROOT/.git" -o -path "$ROOT/.build/checkouts" -o -path "$ROOT/.build/repositories" \) -prune -o \
+  \( -path "$ROOT/.git" -o -path "$ROOT/.build" \) -prune -o \
   -type f \( \
     -name '*.p12' -o \
     -name '*.cer' -o \
@@ -31,6 +34,8 @@ find "$APP_SUPPORT" "$TMPDIR_ROOT" \
   -type f \( \
     -name 'LocalVoiceFlow-*.wav' -o \
     -name 'LocalVoiceFlow-*.txt' -o \
+    -name 'ScrivoraTempAudio-*.wav' -o \
+    -name 'ScrivoraTempAudio-*.txt' -o \
     -name 'Scrivora-*.wav' -o \
     -name 'sample.wav' -o \
     -name 'sample.aiff' \

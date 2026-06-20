@@ -1,17 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
-
-private enum TextInsertionError: LocalizedError {
-    case accessibilityPermissionRequired
-
-    var errorDescription: String? {
-        switch self {
-        case .accessibilityPermissionRequired:
-            "Accessibility permission is required to paste into the focused app. The transcript was copied to the clipboard."
-        }
-    }
-}
+import LocalVoiceFlowCore
 
 enum TextInsertionMethod: String {
     case copiedOnly
@@ -21,47 +11,132 @@ enum TextInsertionMethod: String {
 struct TextInsertionResult {
     var method: TextInsertionMethod
     var restoredClipboard: Bool
+    var metrics: PastePipelineMetrics
 }
 
 @MainActor
 final class TextInsertionService {
     func insertText(
         _ text: String,
-        targetApplication: NSRunningApplication?,
+        startApplication: NSRunningApplication?,
+        endApplication: NSRunningApplication?,
         autoPaste: Bool,
-        restoreClipboard: Bool,
-        restoreDelayMilliseconds: Int
+        pasteTargetBehavior: PasteTargetBehavior,
+        pasteStrategy: PasteStrategy,
+        customRestoreDelayMilliseconds: Int
     ) async throws -> TextInsertionResult {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false)
-        }
-        let snapshot = ClipboardSnapshot.capture()
-        copyToClipboard(text)
+        let pipelineWatch = Stopwatch()
+        var metrics = PastePipelineMetrics(
+            targetBehavior: pasteTargetBehavior.rawValue,
+            targetAppName: targetApplication(
+                startApplication: startApplication,
+                endApplication: endApplication,
+                behavior: pasteTargetBehavior
+            )?.localizedName,
+            targetBundleIdentifier: targetApplication(
+                startApplication: startApplication,
+                endApplication: endApplication,
+                behavior: pasteTargetBehavior
+            )?.bundleIdentifier
+        )
 
-        if autoPaste, let targetApplication, targetApplication.processIdentifier != NSRunningApplication.current.processIdentifier {
-            targetApplication.activate(options: [.activateIgnoringOtherApps])
-            try await Task.sleep(for: .milliseconds(180))
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            metrics.method = TextInsertionMethod.copiedOnly.rawValue
+            metrics.fallbackUsed = true
+            metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false, metrics: metrics)
+        }
+
+        let snapshotWatch = Stopwatch()
+        let snapshot = ClipboardSnapshot.capture()
+        metrics.clipboardSnapshotDuration = snapshotWatch.elapsedSeconds()
+
+        let setWatch = Stopwatch()
+        copyToClipboard(text)
+        metrics.clipboardSetDuration = setWatch.elapsedSeconds()
+
+        guard autoPaste, pasteTargetBehavior != .copyOnly, pasteStrategy != .copyOnly else {
+            metrics.method = TextInsertionMethod.copiedOnly.rawValue
+            metrics.fallbackUsed = true
+            metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false, metrics: metrics)
+        }
+
+        let target = targetApplication(
+            startApplication: startApplication,
+            endApplication: endApplication,
+            behavior: pasteTargetBehavior
+        )
+        guard let target else {
+            metrics.method = TextInsertionMethod.copiedOnly.rawValue
+            metrics.fallbackUsed = true
+            metrics.failureReason = "noPasteTarget"
+            metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false, metrics: metrics)
+        }
+
+        let focusWatch = Stopwatch()
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let focusMatches = frontmost?.processIdentifier == target.processIdentifier
+        metrics.targetFocusCheckDuration = focusWatch.elapsedSeconds()
+        metrics.focusChanged = !focusMatches
+
+        guard focusMatches else {
+            metrics.method = TextInsertionMethod.copiedOnly.rawValue
+            metrics.fallbackUsed = true
+            let expected = target.localizedName ?? "original target"
+            let actual = frontmost?.localizedName ?? "no frontmost app"
+            metrics.failureReason = "targetFocusChanged expected=\(expected) actual=\(actual)"
+            metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false, metrics: metrics)
         }
 
         let accessibilityTrusted = AXIsProcessTrusted()
-        guard autoPaste else {
-            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false)
-        }
-
         guard accessibilityTrusted else {
-            throw TextInsertionError.accessibilityPermissionRequired
+            metrics.method = TextInsertionMethod.copiedOnly.rawValue
+            metrics.fallbackUsed = true
+            metrics.failureReason = "accessibilityPermissionRequired"
+            metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
+            return TextInsertionResult(method: .copiedOnly, restoredClipboard: false, metrics: metrics)
         }
 
+        let commandWatch = Stopwatch()
         sendCommandV()
+        metrics.commandVPostDuration = commandWatch.elapsedSeconds()
+        metrics.visibleInsertLatency = pipelineWatch.elapsedSeconds()
+        metrics.method = TextInsertionMethod.clipboardPaste.rawValue
+
         var restored = false
-        if restoreClipboard, let snapshot {
-            let delay = max(0, restoreDelayMilliseconds)
+        if let delay = pasteStrategy.restoreDelayMilliseconds(customDelay: customRestoreDelayMilliseconds),
+           let snapshot {
+            metrics.clipboardRestoreDelay = TimeInterval(delay) / 1_000
             try await Task.sleep(for: .milliseconds(delay))
+            let restoreWatch = Stopwatch()
             snapshot.restore()
+            metrics.clipboardRestoreDuration = restoreWatch.elapsedSeconds()
+            metrics.backgroundClipboardRestoreLatency = metrics.visibleInsertLatency.map {
+                pipelineWatch.elapsedSeconds() - $0
+            }
             restored = true
         }
+        metrics.totalPastePipelineDuration = pipelineWatch.elapsedSeconds()
 
-        return TextInsertionResult(method: .clipboardPaste, restoredClipboard: restored)
+        return TextInsertionResult(method: .clipboardPaste, restoredClipboard: restored, metrics: metrics)
+    }
+
+    private func targetApplication(
+        startApplication: NSRunningApplication?,
+        endApplication: NSRunningApplication?,
+        behavior: PasteTargetBehavior
+    ) -> NSRunningApplication? {
+        switch behavior {
+        case .focusedAtStart:
+            return startApplication
+        case .focusedAtEnd:
+            return endApplication
+        case .copyOnly:
+            return nil
+        }
     }
 
     private func copyToClipboard(_ text: String) {

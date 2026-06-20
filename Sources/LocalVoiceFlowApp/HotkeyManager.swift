@@ -1,20 +1,23 @@
+import AppKit
+import ApplicationServices
 import Carbon
-import CoreGraphics
 import Foundation
 import LocalVoiceFlowCore
 
 final class HotkeyManager: @unchecked Sendable {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
-    private var eventTap: CFMachPort?
-    private var eventTapRunLoopSource: CFRunLoopSource?
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
     private var controlTapStartedAt: CFAbsoluteTime?
     private var controlTapInvalidated = false
-    private var controlHoldActivated = false
     private var lastControlTapEndedAt: CFAbsoluteTime?
     private var holdWorkItem: DispatchWorkItem?
+    private var holdStopWorkItem: DispatchWorkItem?
+    private var holdState = HoldControlTriggerStateMachine()
     private var triggerMode: TriggerMode = .globalShortcut
     private var holdThreshold: CFTimeInterval = 0.15
+    private let holdReleaseGrace: CFTimeInterval = 0.22
     private var doubleTapInterval: CFTimeInterval = 0.32
     private var onToggle: (() -> Void)?
     private var onStart: (() -> Void)?
@@ -84,19 +87,21 @@ final class HotkeyManager: @unchecked Sendable {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
-        if let eventTapRunLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
-            self.eventTapRunLoopSource = nil
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
         }
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-            self.eventTap = nil
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
         }
         holdWorkItem?.cancel()
         holdWorkItem = nil
+        holdStopWorkItem?.cancel()
+        holdStopWorkItem = nil
+        holdState.reset()
         controlTapStartedAt = nil
         controlTapInvalidated = false
-        controlHoldActivated = false
         lastControlTapEndedAt = nil
     }
 
@@ -112,63 +117,75 @@ final class HotkeyManager: @unchecked Sendable {
         onStop?()
     }
 
-    fileprivate func handleEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let eventTap {
-                CGEvent.tapEnable(tap: eventTap, enable: true)
-            }
-            return Unmanaged.passUnretained(event)
+    private func registerControlTap() throws {
+        let mask: NSEvent.EventTypeMask = [
+            .flagsChanged,
+            .keyDown,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
+            .scrollWheel
+        ]
+
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handleEvent(event)
+            return event
         }
 
+        guard AXIsProcessTrusted() else {
+            throw LocalVoiceFlowError.permissionDenied("Grant Accessibility permission to Scrivora so the Control trigger works while another app is focused, then reopen Scrivora or press Refresh in Privacy.")
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handleEvent(event)
+        }
+
+        guard localEventMonitor != nil, globalEventMonitor != nil else {
+            throw LocalVoiceFlowError.insertionFailed("Unable to watch the Control trigger in other apps. Grant Accessibility permission to Scrivora, then restart it.")
+        }
+    }
+
+    private func handleEvent(_ event: NSEvent) {
+        let type = event.type
+        let keyCode: UInt16
+        switch type {
+        case .flagsChanged, .keyDown, .keyUp:
+            keyCode = event.keyCode
+        default:
+            keyCode = 0
+        }
+        let modifierFlags = event.modifierFlags
+
+        if Thread.isMainThread {
+            handleEvent(type: type, keyCode: keyCode, modifierFlags: modifierFlags)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleEvent(type: type, keyCode: keyCode, modifierFlags: modifierFlags)
+            }
+        }
+    }
+
+    private func handleEvent(type: NSEvent.EventType, keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) {
         switch type {
         case .flagsChanged:
-            handleFlagsChanged(event)
+            handleFlagsChanged(
+                keyCode: Int64(keyCode),
+                controlIsDown: modifierFlags.contains(.control),
+                hasOtherModifiers: hasOtherShortcutModifiers(modifierFlags)
+            )
         case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel:
-            if controlTapStartedAt != nil {
+            if triggerMode == .holdControl {
+                performHoldActions(holdState.invalidateCurrentPress())
+            } else if controlTapStartedAt != nil {
                 controlTapInvalidated = true
                 holdWorkItem?.cancel()
             }
         default:
             break
         }
-
-        return Unmanaged.passUnretained(event)
     }
 
-    private func registerControlTap() throws {
-        let eventMask =
-            (1 << CGEventType.flagsChanged.rawValue) |
-            (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.leftMouseDown.rawValue) |
-            (1 << CGEventType.rightMouseDown.rawValue) |
-            (1 << CGEventType.otherMouseDown.rawValue) |
-            (1 << CGEventType.scrollWheel.rawValue)
-        let selfPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: controlTapEventHandler,
-            userInfo: selfPointer
-        ) else {
-            throw LocalVoiceFlowError.insertionFailed("Unable to register Control trigger. Grant Accessibility permission and restart Scrivora.")
-        }
-
-        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            throw LocalVoiceFlowError.insertionFailed("Unable to create Control Tap run loop source.")
-        }
-
-        eventTap = tap
-        eventTapRunLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-    }
-
-    private func handleFlagsChanged(_ event: CGEvent) {
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+    private func handleFlagsChanged(keyCode: Int64, controlIsDown: Bool, hasOtherModifiers: Bool) {
         guard keyCode == Int64(kVK_Control) || keyCode == Int64(kVK_RightControl) else {
             if controlTapStartedAt != nil {
                 controlTapInvalidated = true
@@ -176,14 +193,14 @@ final class HotkeyManager: @unchecked Sendable {
             return
         }
 
-        let flags = event.flags
-        let controlIsDown = flags.contains(.maskControl)
+        if triggerMode == .holdControl {
+            handleHoldControlChanged(controlIsDown: controlIsDown, hasOtherModifiers: hasOtherModifiers)
+            return
+        }
 
         if controlIsDown, controlTapStartedAt == nil {
             controlTapStartedAt = CFAbsoluteTimeGetCurrent()
-            controlTapInvalidated = hasOtherShortcutModifiers(flags)
-            controlHoldActivated = false
-            scheduleHoldStartIfNeeded(startedAt: controlTapStartedAt)
+            controlTapInvalidated = hasOtherModifiers
             return
         }
 
@@ -192,15 +209,8 @@ final class HotkeyManager: @unchecked Sendable {
             let duration = CFAbsoluteTimeGetCurrent() - startedAt
             let endedAt = CFAbsoluteTimeGetCurrent()
             let shouldFireTap = !controlTapInvalidated && duration <= maximumControlTapDuration
-            let shouldStopHold = triggerMode == .holdControl && controlHoldActivated
             controlTapStartedAt = nil
             controlTapInvalidated = false
-            controlHoldActivated = false
-
-            if shouldStopHold {
-                DispatchQueue.main.async { [weak self] in self?.fireStop() }
-                return
-            }
 
             if triggerMode == .doubleTapControl, shouldFireTap {
                 handleDoubleTap(endedAt: endedAt)
@@ -213,22 +223,56 @@ final class HotkeyManager: @unchecked Sendable {
         }
     }
 
-    private func scheduleHoldStartIfNeeded(startedAt: CFAbsoluteTime?) {
-        guard triggerMode == .holdControl, let startedAt else { return }
+    private func handleHoldControlChanged(controlIsDown: Bool, hasOtherModifiers: Bool) {
+        if controlIsDown {
+            performHoldActions(holdState.controlPressed())
+            if hasOtherModifiers {
+                performHoldActions(holdState.invalidateCurrentPress())
+            }
+        } else {
+            performHoldActions(holdState.controlReleased())
+        }
+    }
+
+    private func performHoldActions(_ actions: [HoldControlTriggerAction]) {
+        for action in actions {
+            switch action {
+            case .scheduleStartAfterThreshold:
+                scheduleHoldStart()
+            case .cancelPendingStart:
+                holdWorkItem?.cancel()
+                holdWorkItem = nil
+            case .startRecording:
+                DispatchQueue.main.async { [weak self] in self?.fireStart() }
+            case .scheduleStopAfterGrace:
+                scheduleHoldStopAfterGrace()
+            case .cancelPendingStop:
+                holdStopWorkItem?.cancel()
+                holdStopWorkItem = nil
+            case .stopRecording:
+                DispatchQueue.main.async { [weak self] in self?.fireStop() }
+            }
+        }
+    }
+
+    private func scheduleHoldStart() {
         holdWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard self.triggerMode == .holdControl,
-                  self.controlTapStartedAt == startedAt,
-                  !self.controlTapInvalidated,
-                  !self.controlHoldActivated
-            else { return }
-
-            self.controlHoldActivated = true
-            self.fireStart()
+            self.performHoldActions(self.holdState.holdThresholdElapsed())
         }
         holdWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: workItem)
+    }
+
+    private func scheduleHoldStopAfterGrace() {
+        holdStopWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.performHoldActions(self.holdState.releaseGraceElapsed())
+        }
+        holdStopWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdReleaseGrace, execute: workItem)
     }
 
     private func handleDoubleTap(endedAt: CFAbsoluteTime) {
@@ -240,11 +284,11 @@ final class HotkeyManager: @unchecked Sendable {
         }
     }
 
-    private func hasOtherShortcutModifiers(_ flags: CGEventFlags) -> Bool {
-        flags.contains(.maskCommand)
-            || flags.contains(.maskAlternate)
-            || flags.contains(.maskShift)
-            || flags.contains(.maskSecondaryFn)
+    private func hasOtherShortcutModifiers(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.contains(.command)
+            || flags.contains(.option)
+            || flags.contains(.shift)
+            || flags.contains(.function)
     }
 }
 
@@ -257,12 +301,6 @@ private let hotKeyEventHandler: EventHandlerUPP = { _, _, userData in
         manager.fireToggle()
     }
     return noErr
-}
-
-private let controlTapEventHandler: CGEventTapCallBack = { proxy, type, event, userData in
-    guard let userData else { return Unmanaged.passUnretained(event) }
-    let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-    return manager.handleEventTap(proxy: proxy, type: type, event: event)
 }
 
 private func carbonModifiers(for modifiers: [ShortcutModifier]) -> UInt32 {
@@ -285,6 +323,16 @@ private func keyCode(for key: String) -> UInt32 {
     case "space": return UInt32(kVK_Space)
     case "return", "enter": return UInt32(kVK_Return)
     case "escape": return UInt32(kVK_Escape)
+    case "0": return UInt32(kVK_ANSI_0)
+    case "1": return UInt32(kVK_ANSI_1)
+    case "2": return UInt32(kVK_ANSI_2)
+    case "3": return UInt32(kVK_ANSI_3)
+    case "4": return UInt32(kVK_ANSI_4)
+    case "5": return UInt32(kVK_ANSI_5)
+    case "6": return UInt32(kVK_ANSI_6)
+    case "7": return UInt32(kVK_ANSI_7)
+    case "8": return UInt32(kVK_ANSI_8)
+    case "9": return UInt32(kVK_ANSI_9)
     default:
         let scalar = key.lowercased().unicodeScalars.first ?? UnicodeScalar(" ")
         switch Character(scalar) {

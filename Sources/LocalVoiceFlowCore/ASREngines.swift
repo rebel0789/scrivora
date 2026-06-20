@@ -72,11 +72,12 @@ public actor WhisperCppCLIEngine: ASREngine {
         guard !buffer.samples.isEmpty else { throw LocalVoiceFlowError.invalidAudio("No captured samples.") }
 
         let stopwatch = Stopwatch()
+        let tempAudio = TempAudioFileManager()
         let wavURL = try WAVFileWriter.writeTemporaryWAV(samples: buffer.samples, sampleRate: buffer.sampleRate)
-        defer { try? FileManager.default.removeItem(at: wavURL) }
+        defer { tempAudio.removeTemporaryFile(wavURL) }
 
         let outputBase = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalVoiceFlow-\(UUID().uuidString)")
+            .appendingPathComponent("ScrivoraTempAudio-\(UUID().uuidString)")
         let modelURL = modelStorage.localURL(for: model, overridePath: modelPathOverride)
         let arguments = argumentsForWhisper(
             executablePath: executablePath,
@@ -93,7 +94,7 @@ public actor WhisperCppCLIEngine: ASREngine {
         } else {
             text = processOutput.combined
         }
-        try? FileManager.default.removeItem(at: textURL)
+        tempAudio.removeTemporaryFile(textURL)
 
         return ASRResult(
             text: text.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -211,7 +212,7 @@ public actor WhisperCppServerEngine: ASREngine {
 
         let stopwatch = Stopwatch()
         let wavURL = try WAVFileWriter.writeTemporaryWAV(samples: buffer.samples, sampleRate: buffer.sampleRate)
-        defer { try? FileManager.default.removeItem(at: wavURL) }
+        defer { TempAudioFileManager().removeTemporaryFile(wavURL) }
 
         var request = URLRequest(url: URL(string: "http://\(host):\(port)/inference")!)
         let boundary = "LocalVoiceFlow-\(UUID().uuidString)"

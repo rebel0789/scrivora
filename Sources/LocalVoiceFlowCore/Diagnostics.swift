@@ -11,6 +11,22 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
     public var firstPartialRequestLatency: TimeInterval?
     public var firstPartialASRDuration: TimeInterval?
     public var pasteMethod: String?
+    public var pasteTargetBehavior: String?
+    public var pasteTargetAppName: String?
+    public var pasteTargetBundleIdentifier: String?
+    public var pasteFocusChanged: Bool?
+    public var pasteFallbackUsed: Bool?
+    public var pasteFailureReason: String?
+    public var clipboardSnapshotDuration: TimeInterval?
+    public var clipboardSetDuration: TimeInterval?
+    public var targetFocusCheckDuration: TimeInterval?
+    public var commandVPostDuration: TimeInterval?
+    public var visibleInsertLatency: TimeInterval?
+    public var clipboardRestoreDelay: TimeInterval?
+    public var clipboardRestoreDuration: TimeInterval?
+    public var totalPastePipelineDuration: TimeInterval?
+    public var userVisibleStopToInsertLatency: TimeInterval?
+    public var backgroundClipboardRestoreLatency: TimeInterval?
     public var modelLoadTime: TimeInterval?
     public var modelWarmupTime: TimeInterval?
 
@@ -25,6 +41,22 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         firstPartialRequestLatency: TimeInterval? = nil,
         firstPartialASRDuration: TimeInterval? = nil,
         pasteMethod: String? = nil,
+        pasteTargetBehavior: String? = nil,
+        pasteTargetAppName: String? = nil,
+        pasteTargetBundleIdentifier: String? = nil,
+        pasteFocusChanged: Bool? = nil,
+        pasteFallbackUsed: Bool? = nil,
+        pasteFailureReason: String? = nil,
+        clipboardSnapshotDuration: TimeInterval? = nil,
+        clipboardSetDuration: TimeInterval? = nil,
+        targetFocusCheckDuration: TimeInterval? = nil,
+        commandVPostDuration: TimeInterval? = nil,
+        visibleInsertLatency: TimeInterval? = nil,
+        clipboardRestoreDelay: TimeInterval? = nil,
+        clipboardRestoreDuration: TimeInterval? = nil,
+        totalPastePipelineDuration: TimeInterval? = nil,
+        userVisibleStopToInsertLatency: TimeInterval? = nil,
+        backgroundClipboardRestoreLatency: TimeInterval? = nil,
         modelLoadTime: TimeInterval? = nil,
         modelWarmupTime: TimeInterval? = nil
     ) {
@@ -38,8 +70,79 @@ public struct LatencyMetrics: Codable, Equatable, Sendable {
         self.firstPartialRequestLatency = firstPartialRequestLatency
         self.firstPartialASRDuration = firstPartialASRDuration
         self.pasteMethod = pasteMethod
+        self.pasteTargetBehavior = pasteTargetBehavior
+        self.pasteTargetAppName = pasteTargetAppName
+        self.pasteTargetBundleIdentifier = pasteTargetBundleIdentifier
+        self.pasteFocusChanged = pasteFocusChanged
+        self.pasteFallbackUsed = pasteFallbackUsed
+        self.pasteFailureReason = pasteFailureReason
+        self.clipboardSnapshotDuration = clipboardSnapshotDuration
+        self.clipboardSetDuration = clipboardSetDuration
+        self.targetFocusCheckDuration = targetFocusCheckDuration
+        self.commandVPostDuration = commandVPostDuration
+        self.visibleInsertLatency = visibleInsertLatency
+        self.clipboardRestoreDelay = clipboardRestoreDelay
+        self.clipboardRestoreDuration = clipboardRestoreDuration
+        self.totalPastePipelineDuration = totalPastePipelineDuration
+        self.userVisibleStopToInsertLatency = userVisibleStopToInsertLatency
+        self.backgroundClipboardRestoreLatency = backgroundClipboardRestoreLatency
         self.modelLoadTime = modelLoadTime
         self.modelWarmupTime = modelWarmupTime
+    }
+}
+
+public struct PastePipelineMetrics: Codable, Equatable, Sendable {
+    public var method: String?
+    public var targetBehavior: String?
+    public var targetAppName: String?
+    public var targetBundleIdentifier: String?
+    public var focusChanged: Bool
+    public var fallbackUsed: Bool
+    public var failureReason: String?
+    public var clipboardSnapshotDuration: TimeInterval?
+    public var clipboardSetDuration: TimeInterval?
+    public var targetFocusCheckDuration: TimeInterval?
+    public var commandVPostDuration: TimeInterval?
+    public var visibleInsertLatency: TimeInterval?
+    public var clipboardRestoreDelay: TimeInterval?
+    public var clipboardRestoreDuration: TimeInterval?
+    public var totalPastePipelineDuration: TimeInterval?
+    public var backgroundClipboardRestoreLatency: TimeInterval?
+
+    public init(
+        method: String? = nil,
+        targetBehavior: String? = nil,
+        targetAppName: String? = nil,
+        targetBundleIdentifier: String? = nil,
+        focusChanged: Bool = false,
+        fallbackUsed: Bool = false,
+        failureReason: String? = nil,
+        clipboardSnapshotDuration: TimeInterval? = nil,
+        clipboardSetDuration: TimeInterval? = nil,
+        targetFocusCheckDuration: TimeInterval? = nil,
+        commandVPostDuration: TimeInterval? = nil,
+        visibleInsertLatency: TimeInterval? = nil,
+        clipboardRestoreDelay: TimeInterval? = nil,
+        clipboardRestoreDuration: TimeInterval? = nil,
+        totalPastePipelineDuration: TimeInterval? = nil,
+        backgroundClipboardRestoreLatency: TimeInterval? = nil
+    ) {
+        self.method = method
+        self.targetBehavior = targetBehavior
+        self.targetAppName = targetAppName
+        self.targetBundleIdentifier = targetBundleIdentifier
+        self.focusChanged = focusChanged
+        self.fallbackUsed = fallbackUsed
+        self.failureReason = failureReason
+        self.clipboardSnapshotDuration = clipboardSnapshotDuration
+        self.clipboardSetDuration = clipboardSetDuration
+        self.targetFocusCheckDuration = targetFocusCheckDuration
+        self.commandVPostDuration = commandVPostDuration
+        self.visibleInsertLatency = visibleInsertLatency
+        self.clipboardRestoreDelay = clipboardRestoreDelay
+        self.clipboardRestoreDuration = clipboardRestoreDuration
+        self.totalPastePipelineDuration = totalPastePipelineDuration
+        self.backgroundClipboardRestoreLatency = backgroundClipboardRestoreLatency
     }
 }
 
@@ -97,6 +200,29 @@ public actor PerformanceLogger {
 
     public func setPasteMethod(_ value: String) {
         current.pasteMethod = value
+    }
+
+    public func setPastePipelineMetrics(_ metrics: PastePipelineMetrics) {
+        current.pasteMethod = metrics.method ?? current.pasteMethod
+        current.pasteTargetBehavior = metrics.targetBehavior
+        current.pasteTargetAppName = metrics.targetAppName
+        current.pasteTargetBundleIdentifier = metrics.targetBundleIdentifier
+        current.pasteFocusChanged = metrics.focusChanged
+        current.pasteFallbackUsed = metrics.fallbackUsed
+        current.pasteFailureReason = metrics.failureReason
+        current.clipboardSnapshotDuration = metrics.clipboardSnapshotDuration
+        current.clipboardSetDuration = metrics.clipboardSetDuration
+        current.targetFocusCheckDuration = metrics.targetFocusCheckDuration
+        current.commandVPostDuration = metrics.commandVPostDuration
+        current.visibleInsertLatency = metrics.visibleInsertLatency
+        current.clipboardRestoreDelay = metrics.clipboardRestoreDelay
+        current.clipboardRestoreDuration = metrics.clipboardRestoreDuration
+        current.totalPastePipelineDuration = metrics.totalPastePipelineDuration
+        current.backgroundClipboardRestoreLatency = metrics.backgroundClipboardRestoreLatency
+    }
+
+    public func setUserVisibleStopToInsertLatency(_ value: TimeInterval) {
+        current.userVisibleStopToInsertLatency = value
     }
 
     public func setModelLoadTime(_ value: TimeInterval) {

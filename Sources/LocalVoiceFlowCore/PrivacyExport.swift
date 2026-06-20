@@ -172,8 +172,13 @@ public struct PrivacyExportService: Sendable {
 
         if options.includeHistory {
             let records = (try? HistoryStore(directory: fileStore.historyDirectory).load()) ?? []
-            let exported = records.map { record in
-                HistoryRecord(
+            let exported = records.map { record -> HistoryRecord in
+                var metrics = record.latencyMetrics
+                if options.redactTargetMetadata {
+                    metrics.pasteTargetAppName = nil
+                    metrics.pasteTargetBundleIdentifier = nil
+                }
+                return HistoryRecord(
                     id: record.id,
                     createdAt: record.createdAt,
                     finalTranscript: options.redactTranscriptText ? "[redacted]" : record.finalTranscript,
@@ -181,7 +186,7 @@ public struct PrivacyExportService: Sendable {
                     asrModelID: record.asrModelID,
                     cleanupMode: record.cleanupMode,
                     outputProfile: record.outputProfile,
-                    latencyMetrics: record.latencyMetrics
+                    latencyMetrics: metrics
                 )
             }
             try encoder.encode(exported)
@@ -212,7 +217,7 @@ public struct PrivacyExportService: Sendable {
             let outputName = options.redactTargetMetadata ? "performance-logs-redacted.jsonl" : "performance-logs.jsonl"
             try exportPerformanceLogs(
                 to: exportDirectory.appendingPathComponent(outputName),
-                redactTargetMetadata: options.redactTargetMetadata
+                options: options
             )
             files.append(outputName)
         }
@@ -243,7 +248,7 @@ public struct PrivacyExportService: Sendable {
         return PrivacyExportResult(directory: exportDirectory, manifest: manifest)
     }
 
-    private func exportPerformanceLogs(to outputURL: URL, redactTargetMetadata: Bool) throws {
+    private func exportPerformanceLogs(to outputURL: URL, options: PrivacyExportOptions) throws {
         let logURL = fileStore.logsDirectory.appendingPathComponent("dictation-performance.jsonl")
         guard FileManager.default.fileExists(atPath: logURL.path) else {
             try Data().write(to: outputURL, options: [.atomic])
@@ -261,15 +266,84 @@ public struct PrivacyExportService: Sendable {
         var output = Data()
         for line in String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: true) {
             guard var record = try? decoder.decode(PerformanceLogRecord.self, from: Data(line.utf8)) else { continue }
-            if redactTargetMetadata {
+            if options.redactTargetMetadata || options.redactLocalPaths {
+                let tokens = [
+                    record.targetAppName,
+                    record.targetBundleIdentifier,
+                    record.metrics.pasteTargetAppName,
+                    record.metrics.pasteTargetBundleIdentifier
+                ]
+                record.error = Self.redactDiagnosticString(
+                    record.error,
+                    sensitiveTokens: tokens,
+                    redactBundleIdentifiers: options.redactTargetMetadata,
+                    redactLocalPaths: options.redactLocalPaths
+                )
+                record.metrics.pasteFailureReason = Self.redactDiagnosticString(
+                    record.metrics.pasteFailureReason,
+                    sensitiveTokens: tokens,
+                    redactBundleIdentifiers: options.redactTargetMetadata,
+                    redactLocalPaths: options.redactLocalPaths
+                )
+            }
+            if options.redactTargetMetadata {
                 record.targetAppName = nil
                 record.targetBundleIdentifier = nil
+                record.metrics.pasteTargetAppName = nil
+                record.metrics.pasteTargetBundleIdentifier = nil
             }
             var encoded = try encoder.encode(record)
             encoded.append(0x0A)
             output.append(encoded)
         }
         try output.write(to: outputURL, options: [.atomic])
+    }
+
+    private static func redactDiagnosticString(
+        _ value: String?,
+        sensitiveTokens: [String?],
+        redactBundleIdentifiers: Bool,
+        redactLocalPaths: Bool
+    ) -> String? {
+        guard var redacted = value else { return nil }
+
+        for token in sensitiveTokens.compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            redacted = redacted.replacingOccurrences(of: token, with: "[redacted]")
+        }
+
+        if redactLocalPaths {
+            redacted = replacingMatches(
+                in: redacted,
+                pattern: #"(file://)?/(Users|Volumes|private|var|tmp)/[^\s"'<>]+"#,
+                replacement: "[redacted-path]"
+            )
+            redacted = replacingMatches(
+                in: redacted,
+                pattern: #"~(/[^\s"'<>]+)+"#,
+                replacement: "[redacted-path]"
+            )
+        }
+
+        if redactBundleIdentifiers {
+            redacted = replacingMatches(
+                in: redacted,
+                pattern: #"\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){2,}\b"#,
+                replacement: "[redacted-bundle-id]"
+            )
+        }
+
+        return redacted
+    }
+
+    private static func replacingMatches(in value: String, pattern: String, replacement: String) -> String {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return value }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        return expression.stringByReplacingMatches(
+            in: value,
+            options: [],
+            range: range,
+            withTemplate: replacement
+        )
     }
 
     private func storageSummary(redactPaths: Bool) -> [StorageSummaryEntry] {
@@ -293,7 +367,7 @@ public struct PrivacyExportService: Sendable {
     private func debugSummary(settings: AppSettings) -> DebugSummary {
         DebugSummary(
             appName: "Scrivora",
-            bundleIdentifier: "app.localvoiceflow.mvp",
+            bundleIdentifier: "me.scrivora.app",
             executableName: "LocalVoiceFlowApp",
             selectedASRModelID: settings.models.selectedASRModelID,
             selectedASRMode: settings.models.selectedASRMode.rawValue,

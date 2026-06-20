@@ -2,11 +2,7 @@ import Foundation
 
 public enum WAVFileWriter {
     public static func writeTemporaryWAV(samples: [Float], sampleRate: Int = 16_000) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalVoiceFlow-\(UUID().uuidString)")
-            .appendingPathExtension("wav")
-        try writeWAV(samples: samples, sampleRate: sampleRate, to: url)
-        return url
+        try TempAudioFileManager().createTemporaryWAV(samples: samples, sampleRate: sampleRate)
     }
 
     public static func writeWAV(samples: [Float], sampleRate: Int = 16_000, to url: URL) throws {
