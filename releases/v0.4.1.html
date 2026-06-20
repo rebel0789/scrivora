@@ -359,9 +359,9 @@
       <div>
         <p class="kicker">v0.4.1 release notes · updated June 20, 2026</p>
         <h1 id="release-title">Realtime voice. Private by default.</h1>
-        <p class="lead">Scrivora turns speech into text locally and writes back into the app you are using. The Mac install path is a signed DMG: open it, drag Scrivora into Applications, and start from the menu bar.</p>
+        <p class="lead">Scrivora turns speech into text locally and writes back into the app you are using. Download the preview DMG, drag Scrivora into Applications, and start from the menu bar.</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/rebel0789/scrivora/releases/tag/v0.4.1">GitHub release</a>
+          <a class="button primary" href="https://github.com/rebel0789/scrivora/releases/download/v0.4.1/Scrivora-0.4.1-preview-unnotarized.dmg">Download DMG</a>
           <a class="button" href="/">Website</a>
           <a class="button" href="/updates/stable.example.json">Update manifest</a>
         </div>
@@ -369,7 +369,7 @@
 
       <aside class="release-card" aria-label="Release channel">
         <strong>Release channel</strong>
-        <p>The DMG is attached only after Developer ID signing, notarization, stapling, and Gatekeeper verification pass.</p>
+        <p>Free preview DMG. Not Apple notarized. If macOS blocks it, remove quarantine from Scrivora.app after installation.</p>
       </aside>
     </section>
 
@@ -380,7 +380,14 @@
           <strong>Install</strong>
           <div>
             <h3>The installer path stays drag-and-drop.</h3>
-            <p>No Xcode. No Swift toolchain. The public DMG is attached after it passes the Developer ID and Gatekeeper release checks.</p>
+            <p>No Xcode. No Swift toolchain. Download the DMG, drag Scrivora.app into Applications, and grant macOS permissions when prompted.</p>
+          </div>
+        </article>
+        <article class="note-item">
+          <strong>macOS</strong>
+          <div>
+            <h3>If macOS says the app is damaged.</h3>
+            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. This removes quarantine from Scrivora only.</p>
           </div>
         </article>
         <article class="note-item">

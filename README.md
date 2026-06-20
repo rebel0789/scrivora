@@ -15,17 +15,39 @@ The website is live at `https://scrivora.me`.
 
 ## Install
 
-The normal install path, once the signed DMG is attached, is:
+## Installation Guide
 
-1. Download the versioned `Scrivora.dmg` from the GitHub release.
-2. Open the DMG.
-3. Drag `Scrivora.app` into `Applications`.
-4. Open Scrivora from the menu bar and grant Microphone and Accessibility when
+### Option A: Manual Download
+
+Download the macOS preview DMG from the GitHub release:
+
+```text
+https://github.com/rebel0789/scrivora/releases/tag/v0.4.1
+```
+
+Then:
+
+1. Open the DMG.
+2. Drag `Scrivora.app` into `Applications`.
+3. Open Scrivora from the menu bar and grant Microphone and Accessibility when
    macOS asks.
 
-Attach the DMG only after Developer ID signing, notarization, stapling, and
-Gatekeeper verification pass. A local development-signed DMG will be rejected by
-macOS after download.
+The preview DMG is open source and free, but it is not Apple notarized. Some
+macOS versions show a damaged-app warning for unnotarized apps.
+
+### macOS Says "App Is Damaged"
+
+Open Terminal and run:
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
+open "/Applications/Scrivora.app"
+```
+
+You can also open System Settings, go to Privacy & Security, and choose
+Open Anyway after macOS blocks the app.
+
+This removes quarantine only from Scrivora. Do not disable Gatekeeper globally.
 
 ## What It Does
 
@@ -52,7 +74,8 @@ release docs use Scrivora.
 ## Requirements For Users
 
 - macOS 14 or newer.
-- A Developer ID signed and notarized `Scrivora.app` or `Scrivora-0.4.1.dmg`.
+- A downloaded preview DMG, or a Developer ID signed and notarized DMG when the
+  paid signing path is available.
 
 No account. No card. No cloud speech API for core dictation.
 

@@ -11,18 +11,26 @@ Use `RELEASE_STATUS.md` for the current release state.
 
 ## User Install
 
-The public install path should stay this simple:
+The preview install path should stay this simple:
 
-1. Download `Scrivora-0.4.1.dmg` from the GitHub release.
+1. Download `Scrivora-0.4.1-preview-unnotarized.dmg` from the GitHub release.
 2. Open the DMG.
 3. Drag `Scrivora.app` into `/Applications`.
 4. Open Scrivora and grant Microphone and Accessibility when macOS asks.
 
 Users do not need Swift, Xcode, or a local build.
 
-The DMG must be Developer ID signed, notarized, stapled, and accepted by
-Gatekeeper before it is attached to a public release. Do not upload or link a
-local development-signed DMG; macOS will reject it after download.
+The free preview DMG is not Apple notarized. If macOS reports that the app is
+damaged, remove quarantine from the installed app only:
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
+open "/Applications/Scrivora.app"
+```
+
+Do not ask users to disable Gatekeeper globally. A fully trusted public DMG
+still requires Developer ID signing, notarization, stapling, and Gatekeeper
+verification.
 
 ## Local Development Install
 
@@ -49,6 +57,7 @@ Useful scripts:
 Scripts/create_local_codesign_identity.sh
 Scripts/package_dev_app.sh
 Scripts/package_app_bundle.sh
+Scripts/package_preview_dmg.sh
 Scripts/install_app_bundle.sh
 Scripts/clean_dev_signing_material.sh
 Scripts/audit_sensitive_files.sh
