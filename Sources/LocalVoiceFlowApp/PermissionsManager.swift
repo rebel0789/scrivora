@@ -10,9 +10,9 @@ enum PermissionState: String {
 
     var label: String {
         switch self {
-        case .unknown: "Unknown"
-        case .granted: "Granted"
-        case .denied: "Denied"
+        case .unknown: "Not set"
+        case .granted: "Allowed"
+        case .denied: "Needs access"
         }
     }
 }
@@ -41,6 +41,8 @@ struct PermissionsManager {
     }
 
     func requestAccessibilityPermission() -> PermissionState {
+        // The SDK exposes kAXTrustedCheckOptionPrompt as mutable global state, which
+        // trips Swift 6 concurrency checks. The documented key string is stable.
         let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options) ? .granted : .denied
     }

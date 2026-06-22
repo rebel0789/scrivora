@@ -1,7 +1,7 @@
 # Contributing
 
-Scrivora is preparing for an open-source release. Contributions should preserve
-the local-first privacy boundary and keep public claims accurate.
+Scrivora is open source. Contributions should preserve the local-first privacy
+boundary and keep public claims accurate.
 
 ## Development Setup
 

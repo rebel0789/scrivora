@@ -6,8 +6,10 @@ The production updater URL is:
 https://scrivora.me/updates/stable.json
 ```
 
-Do not publish `stable.json` until the final updater ZIP has been built from a
-Developer ID signed, notarized, and stapled app.
+Publish `stable.json` with the versioned GitHub Release assets. In the free
+release path, Scrivora uses it for update metadata and opens the release page so
+users can download the DMG. In a Developer ID build, the same feed can drive
+in-app replacement updates.
 
 The manifest must contain the SHA-256 and byte size of the exact uploaded ZIP.
 Use:

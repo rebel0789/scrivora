@@ -1,13 +1,13 @@
 # Scrivora Release Status
 
-Last updated: 2026-06-20
+Last updated: 2026-06-22
 
 This file is the release source of truth for the repo. Older audit and planning
 files are historical unless they point here.
 
 ## Current Position
 
-Scrivora is staged for private GitHub review at
+Scrivora source is prepared for public GitHub release at
 `https://github.com/rebel0789/scrivora`.
 
 The public product path is a prebuilt Mac DMG: download, open, drag Scrivora into
@@ -20,12 +20,12 @@ themselves.
 
 | Track | Status | Next gate |
 | --- | --- | --- |
-| Source repo | Private staging | Choose license and add `LICENSE` before public visibility. |
+| Source repo | Ready for public visibility | MIT license added; keep release-sensitive artifacts out of git. |
 | Website | Live | `https://scrivora.me` is served by GitHub Pages. |
 | GitHub Pages | Live | HTTPS is enforced for `scrivora.me`. |
 | Vercel | Static bundle prepared | Re-authenticate Vercel and attach `scrivora.me` only after confirmation. |
-| Mac app DMG | Scripted | Attach after Developer ID signing, notarization, stapling, Gatekeeper check. |
-| In-app update manifest | Template only | Generate `updates/stable.json` from the final signed ZIP and uploaded URL. |
+| Mac app DMG | Free preview artifact | Attach preview DMG and checksums to GitHub Release; notarized Developer ID build remains a later track. |
+| In-app update manifest | Ready for metadata feed | `updates/stable.json` points at the GitHub Release ZIP and release notes. Free builds open the release page for download. |
 
 ## Current Product Scope
 
@@ -47,7 +47,6 @@ Not included:
 - Payment or card capture.
 - Hosted transcript storage.
 - Bundled speech model weights.
-- Live updater manifest before signed release artifacts exist.
 
 ## Security Status
 
@@ -68,17 +67,17 @@ Current status from repo inspection:
   identifiers, local paths, and diagnostic failure strings.
 - Release scripts use `notarytool` keychain profiles and keep Apple credentials
   off long-running command lines.
-- `updates/stable.json` is intentionally absent until the final signed updater
-  ZIP and SHA-256 exist.
+- `updates/stable.json` is generated from the current updater ZIP. Free builds
+  use it for release metadata and open the release page for download.
 
-Release rule: do not bundle model weights or publish a live updater manifest
-until the exact artifact, hash, and license obligations are known.
+Release rule: do not bundle model weights. Keep the update manifest hash tied
+to the exact ZIP uploaded to the GitHub Release.
 
-## Required Before Making The GitHub Repo Public
+## Public Source Release Checklist
 
-1. Pick the source license and add `LICENSE`.
-2. Confirm the copyright owner text.
-3. Review `MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
+1. Confirm the MIT license and copyright owner text.
+2. Review `MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
+3. Confirm `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, and this file.
 4. Run:
 
    ```bash
@@ -91,11 +90,10 @@ until the exact artifact, hash, and license obligations are known.
 5. Confirm no generated binaries, model weights, transcripts, recordings, logs,
    app bundles, zips, DMGs, keychains, certificates, or signing profiles are
    tracked.
-6. Review `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, and this file.
-7. Push to `https://github.com/rebel0789/scrivora`, not a scratch checkout with
+6. Push to `https://github.com/rebel0789/scrivora`, not a scratch checkout with
    no remote.
 
-## Required Before Attaching The DMG
+## Required Before Attaching A Notarized DMG
 
 1. Create or install a Developer ID Application certificate.
 2. Set:
@@ -121,7 +119,6 @@ until the exact artifact, hash, and license obligations are known.
 
 - App Store availability.
 - Notarized public download.
-- Live hosted updates.
 - Model-weight redistribution.
 - Cloud-free behavior for future optional cloud features.
 - Security bounty or SLA.

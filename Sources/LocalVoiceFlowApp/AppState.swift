@@ -121,6 +121,7 @@ final class AppState: ObservableObject {
     private var partialStabilizer = PartialTranscriptStabilizer(requiredRepeats: 2)
     private var partialSequenceNumber = 0
     private var finishedResetWorkItem: DispatchWorkItem?
+    private var hotkeyRegisteredSuccessfully = false
 
     init() {
         fileStore = LocalFileStore()
@@ -147,6 +148,7 @@ final class AppState: ObservableObject {
         configureSilenceDetector()
         registerHotkey()
         observeApplicationActivation()
+        observeAppLifecyclePermissionRefresh()
         observeTermination()
         Task { @MainActor [weak self] in
             self?.syncOverlay()
@@ -207,7 +209,8 @@ final class AppState: ObservableObject {
     func refreshPermissions() {
         let previousAccessibilityPermission = accessibilityPermission
         microphonePermission = permissions.microphonePermissionState()
-        accessibilityPermission = permissions.accessibilityPermissionState()
+        let polledAccessibilityPermission = permissions.accessibilityPermissionState()
+        accessibilityPermission = effectiveAccessibilityPermission(polledAccessibilityPermission)
         if hotkeyManager != nil,
            previousAccessibilityPermission != .granted,
            accessibilityPermission == .granted {
@@ -222,9 +225,12 @@ final class AppState: ObservableObject {
     }
 
     func requestAccessibilityPermission() {
-        accessibilityPermission = permissions.requestAccessibilityPermission()
+        let requestedPermission = permissions.requestAccessibilityPermission()
+        accessibilityPermission = effectiveAccessibilityPermission(requestedPermission)
         if accessibilityPermission == .granted {
             registerHotkey()
+        } else {
+            permissions.openAccessibilitySettings()
         }
     }
 
@@ -308,16 +314,22 @@ final class AppState: ObservableObject {
         }
     }
 
-    func selectModel(_ model: ASRModelInfo) {
+    @discardableResult
+    func selectModel(_ model: ASRModelInfo) -> Bool {
+        guard isModelRuntimeAvailable(model) else {
+            modelDownloadMessage = "\(model.displayName) needs an external runtime before Scrivora can use it. Use Parakeet for the built-in local path."
+            return false
+        }
         guard isModelDownloaded(model) else {
             modelDownloadMessage = "Download \(model.displayName) before using it."
-            return
+            return false
         }
         settings.models.selectedASRModelID = model.id
         settings.models.selectedASRMode = model.mode
         invalidateASREngine()
         saveSettings()
         scheduleSelectedModelPreparation()
+        return true
     }
 
     func isModelDownloaded(_ model: ASRModelInfo) -> Bool {
@@ -338,6 +350,32 @@ final class AppState: ObservableObject {
 
     func downloadProgress(for model: ASRModelInfo) -> Double? {
         modelDownloadProgress[model.id]
+    }
+
+    var isWhisperRuntimeAvailable: Bool {
+        resolvedWhisperExecutable() != nil || resolvedWhisperServerExecutable() != nil
+    }
+
+    func isModelRuntimeAvailable(_ model: ASRModelInfo) -> Bool {
+        switch model.backend {
+        case .fluidAudio, .mock:
+            true
+        case .whisperCpp:
+            isWhisperRuntimeAvailable
+        case .whisperKit, .sherpaOnnx, .moonshine:
+            false
+        }
+    }
+
+    func shouldShowModelInStandardPicker(_ model: ASRModelInfo) -> Bool {
+        switch model.backend {
+        case .fluidAudio:
+            return true
+        case .whisperCpp:
+            return isWhisperRuntimeAvailable
+        case .whisperKit, .mock, .sherpaOnnx, .moonshine:
+            return false
+        }
     }
 
     func setPreferPersistentWhisperServer(_ enabled: Bool) {
@@ -384,6 +422,11 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard isModelRuntimeAvailable(model) else {
+            modelDownloadMessage = "\(model.displayName) needs whisper.cpp before it can run. Use Parakeet, or install whisper.cpp first."
+            return
+        }
+
         modelDownloadMessage = "Downloading \(model.displayName)..."
         downloadingModelID = model.id
         modelDownloadProgress[model.id] = 0
@@ -401,13 +444,17 @@ final class AppState: ObservableObject {
                         }
                     }
                 case .fluidAudio:
-                    modelDownloadProgress[model.id] = nil
-                    _ = try await FluidAudioModelSupport.download(model)
+                    _ = try await FluidAudioModelSupport.download(model) { [weak self] progress in
+                        Task { @MainActor in
+                            self?.modelDownloadProgress[model.id] = progress
+                        }
+                    }
                 default:
                     throw LocalVoiceFlowError.modelUnavailable("Direct app download is enabled for whisper.cpp and FluidAudio Parakeet models.")
                 }
-                selectModel(model)
-                modelDownloadMessage = "Downloaded and selected \(model.displayName)."
+                if selectModel(model) {
+                    modelDownloadMessage = "Downloaded and selected \(model.displayName)."
+                }
             } catch {
                 modelDownloadMessage = error.localizedDescription
             }
@@ -661,7 +708,7 @@ final class AppState: ObservableObject {
         guard manual || settings.updates.automaticChecksEnabled else { return }
         guard let manifestURL = updateManifestURL() else {
             if manual {
-                updateStatusMessage = "Set an update manifest URL before checking for updates."
+                updateStatusMessage = "Update feed is unavailable. Open scrivora.me/releases for the latest build."
             }
             return
         }
@@ -706,6 +753,11 @@ final class AppState: ObservableObject {
     func installAvailableUpdate() {
         guard let availableUpdate else {
             updateStatusMessage = "No update is available."
+            return
+        }
+        guard AppBrand.updateDeveloperTeamIdentifier != nil else {
+            updateStatusMessage = "Open the release page to download the latest DMG."
+            openAvailableUpdateReleaseNotes()
             return
         }
         guard !isInstallingUpdate else { return }
@@ -919,7 +971,7 @@ final class AppState: ObservableObject {
         switch model.backend {
         case .whisperCpp:
             if settings.models.preferPersistentWhisperServer,
-               let serverExecutable = settings.models.whisperServerExecutablePath ?? findWhisperServerExecutable() {
+               let serverExecutable = resolvedWhisperServerExecutable() {
                 return WhisperCppServerEngine(
                     serverExecutablePath: serverExecutable,
                     modelStorage: modelStorage,
@@ -927,8 +979,8 @@ final class AppState: ObservableObject {
                 )
             }
 
-            guard let executable = settings.models.whisperExecutablePath ?? findWhisperExecutable() else {
-                throw LocalVoiceFlowError.modelUnavailable("Install whisper.cpp and set the executable path in Advanced settings.")
+            guard let executable = resolvedWhisperExecutable() else {
+                throw LocalVoiceFlowError.modelUnavailable("Whisper needs whisper.cpp before it can run. Use a Parakeet model for the built-in local path.")
             }
             return WhisperCppCLIEngine(
                 executablePath: executable,
@@ -962,6 +1014,23 @@ final class AppState: ObservableObject {
         ].first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    private func resolvedWhisperExecutable() -> String? {
+        executablePath(settings.models.whisperExecutablePath) ?? findWhisperExecutable()
+    }
+
+    private func resolvedWhisperServerExecutable() -> String? {
+        executablePath(settings.models.whisperServerExecutablePath) ?? findWhisperServerExecutable()
+    }
+
+    private func executablePath(_ path: String?) -> String? {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty,
+              FileManager.default.isExecutableFile(atPath: path) else {
+            return nil
+        }
+        return path
+    }
+
     private func normalizedOptionalPath(_ path: String) -> String? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -978,11 +1047,10 @@ final class AppState: ObservableObject {
 
     private func applyBundledUpdateManifestURLIfNeeded() {
         guard settings.updates.manifestURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard
-            let bundledValue = Bundle.main.object(forInfoDictionaryKey: "ScrivoraUpdateManifestURL") as? String,
-            !bundledValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
-        settings.updates.manifestURLString = bundledValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bundledValue = Bundle.main.object(forInfoDictionaryKey: "ScrivoraUpdateManifestURL") as? String
+        let trimmedBundledValue = bundledValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolvedValue = trimmedBundledValue.isEmpty ? AppBrand.updateManifestURL : trimmedBundledValue
+        settings.updates.manifestURLString = resolvedValue
         try? settingsStore.save(settings)
     }
 
@@ -1127,6 +1195,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func observeAppLifecyclePermissionRefresh() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshPermissions()
+            }
+        }
+    }
+
     private func observeTermination() {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -1224,7 +1304,7 @@ final class AppState: ObservableObject {
     }
 
     private func isSelectableASRModel(_ model: ASRModelInfo) -> Bool {
-        model.backend == .whisperCpp || model.backend == .fluidAudio
+        isModelRuntimeAvailable(model)
     }
 
     private func mergeLearnedEntries(_ entries: [UserDictionaryEntry]) {
@@ -1254,6 +1334,7 @@ final class AppState: ObservableObject {
 
     private func registerHotkey() {
         hotkeyManager = HotkeyManager()
+        hotkeyRegisteredSuccessfully = false
         do {
             try hotkeyManager?.register(
                 shortcut: settings.dictation.shortcut,
@@ -1276,12 +1357,32 @@ final class AppState: ObservableObject {
             if let hotkeyRegistrationError, lastError == hotkeyRegistrationError {
                 lastError = nil
             }
+            hotkeyRegisteredSuccessfully = true
+            if hotkeyRegistrationImpliesAccessibilityTrust {
+                accessibilityPermission = .granted
+            }
             hotkeyRegistrationError = nil
         } catch {
+            hotkeyRegisteredSuccessfully = false
             let message = error.localizedDescription
             hotkeyRegistrationError = message
             lastError = message
         }
+    }
+
+    private func effectiveAccessibilityPermission(_ polledPermission: PermissionState) -> PermissionState {
+        if polledPermission == .granted {
+            return .granted
+        }
+        if hotkeyRegistrationImpliesAccessibilityTrust {
+            return .granted
+        }
+        return polledPermission
+    }
+
+    private var hotkeyRegistrationImpliesAccessibilityTrust: Bool {
+        hotkeyRegisteredSuccessfully
+            && (settings.dictation.triggerMode != .globalShortcut || settings.dictation.shortcut.isControlTap)
     }
 
     private func fail(_ message: String) {

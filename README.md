@@ -10,7 +10,7 @@ Scrivora is open-source software. You can inspect it, edit it, and build it
 yourself. Normal users do not need Xcode or Swift: download the DMG, open it,
 and drag Scrivora into Applications.
 
-Current release staging lives at `https://github.com/rebel0789/scrivora`.
+Source lives at `https://github.com/rebel0789/scrivora`.
 The website is live at `https://scrivora.me`.
 
 ## Installation Guide
@@ -149,7 +149,7 @@ Scripts/bootstrap_whisper_cpp.sh base.en-q5_1
 Scripts/download_whisper_model.sh small.en-q5_1
 ```
 
-Before publishing a public release, verify the upstream license and
+Before bundling or mirroring models, verify the upstream license and
 redistribution terms for every model, binary, and generated artifact. See
 `MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
 
@@ -190,7 +190,7 @@ The static website is prepared for:
 https://scrivora.me
 ```
 
-Repository staging:
+Source repository:
 
 ```text
 https://github.com/rebel0789/scrivora
@@ -203,9 +203,10 @@ The production update endpoint is intended to be:
 https://scrivora.me/updates/stable.json
 ```
 
-Only publish `updates/stable.json` after the updater ZIP has been built from a
-Developer ID signed, notarized, and stapled app. Until then, use
-`updates/stable.example.json` and `UPDATE_MANIFEST.example.json` as templates.
+Publish `updates/stable.json` with the GitHub Release assets. Free builds use
+that feed for release metadata and send users to the DMG release page. A
+Developer ID build can use the same feed for in-app replacement updates after
+the ZIP is signed, notarized, and generated from the exact uploaded app.
 
 ## Release Status
 
@@ -213,17 +214,18 @@ Use `RELEASE_STATUS.md` as the current release source of truth.
 
 Current release tracks:
 
-- Source repo: staged privately on GitHub for review.
+- Source repo: public on GitHub under the MIT license.
 - Website: live at `https://scrivora.me`.
-- Mac app binary: ship as a drag-to-Applications DMG after Developer ID signing,
-  notarization, and Gatekeeper verification.
-- In-app updates: manifest template only until the signed updater ZIP exists.
+- Mac app binary: free preview DMG now; notarized Developer ID build later.
+- Update feed: `https://scrivora.me/updates/stable.json` serves release
+  metadata. Free builds open the release page for download.
 
 See:
 
 - `RELEASE_STATUS.md`
 - `RELEASE_CHECKLIST.md`
 - `OPEN_SOURCE_STRATEGY.md`
+- `LICENSE`
 - `LICENSE_PLAN.md`
 - `MODEL_LICENSES.md`
 - `THIRD_PARTY_NOTICES.md`

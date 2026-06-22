@@ -166,9 +166,9 @@ The manifest must point at the exact uploaded zip URL and SHA-256. The public
 website can link the DMG from the same GitHub release while the in-app updater
 continues to use the zipped `.app` artifact.
 
-The repo should keep `updates/stable.example.json` as a template. Do not publish
-or commit `updates/stable.json` until the final uploaded updater ZIP exists and
-the manifest was generated from that exact file.
+The repo keeps `updates/stable.example.json` as a template. Publish
+`updates/stable.json` only after it has been generated from the exact ZIP that
+will be uploaded to the GitHub Release.
 
 ## Configure The App
 
@@ -186,15 +186,17 @@ For local testing, open Scrivora:
 About -> Updates -> Manifest
 ```
 
-Paste the manifest URL, then click Check Now.
+Paste the manifest URL, then click Check Now. Normal builds now default to
+`https://scrivora.me/updates/stable.json`, so this field is mainly useful for
+local feed testing.
 
 ## Current Limits
 
-- Production updates require Developer ID signing and notarization.
+- Self-installing in-app updates require Developer ID signing and notarization.
+- Free releases can still use the update feed for release metadata and open the
+  DMG release page.
 - The app does not host update files itself.
-- `scrivora.me` is prepared as the HTTPS manifest host, but the live
-  `updates/stable.json` file should stay unpublished until a signed updater ZIP
-  exists.
+- `scrivora.me` is the HTTPS manifest host.
 - The update helper assumes Scrivora is installed at `/Applications/Scrivora.app`.
 - If macOS permissions on `/Applications` block replacement, the update will fail and the user must install manually.
 - Sparkle is not integrated yet. This custom updater is intentionally small and local-first, but Sparkle remains the stronger long-term option for production-grade delta updates and signature policy.

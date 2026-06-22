@@ -1,26 +1,18 @@
 # License Decision
 
-No source license has been selected yet.
+Scrivora source is released under the MIT License.
 
-Before the GitHub repo is made public, choose one source license and add
-`LICENSE`. Public visibility without a license lets people read the code, but it
-does not grant clear rights to use, modify, or redistribute it.
+The repository includes `LICENSE` at the root. Public visibility now grants
+clear rights to use, modify, and redistribute the source under MIT terms.
 
 This file is an engineering checklist. It is not legal advice.
 
 ## Decision
 
-Choose one source license for the public codebase.
+Selected source license: `MIT`.
 
-Common options to evaluate:
-
-- `Apache-2.0`: permissive license with an explicit patent grant.
-- `MIT`: short permissive license with minimal conditions.
-- `GPL-3.0-or-later`: copyleft license that requires derivative works to stay
-  under compatible terms.
-
-Do not mix license families casually. The source license must be compatible with
-the third-party code and packages used by the project.
+Do not mix license families casually. New third-party code must remain
+compatible with the source license and the notices in this repo.
 
 ## Separate From Model Licenses
 
@@ -62,10 +54,9 @@ If the project later adds paid features, keep that boundary explicit:
 
 ## Release Step
 
-1. Pick the license.
-2. Confirm copyright owner text.
-3. Check dependency compatibility.
-4. Check model-license compatibility.
-5. Update `README.md` with the chosen license.
-6. Keep `THIRD_PARTY_NOTICES.md` current.
-7. Update GitHub repository license metadata after pushing.
+1. Keep `LICENSE` in the root.
+2. Keep copyright owner text current.
+3. Check dependency compatibility before adding packages.
+4. Check model-license compatibility before bundling or mirroring models.
+5. Keep `README.md`, `MODEL_LICENSES.md`, and `THIRD_PARTY_NOTICES.md`
+   current.

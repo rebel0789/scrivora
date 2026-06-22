@@ -201,7 +201,7 @@ struct MenuBarContentView: View {
     private var downloadedModels: [ASRModelInfo] {
         appState.modelCatalog.models
             .filter { appState.isModelDownloaded($0) }
-            .filter { $0.backend == .fluidAudio || $0.backend == .whisperCpp }
+            .filter { appState.shouldShowModelInStandardPicker($0) }
     }
 
     private func copyLastTranscript() {
@@ -321,6 +321,7 @@ struct PreferencesRootView: View {
                     currentVersion: appState.appVersion,
                     statusMessage: appState.updateStatusMessage,
                     isInstalling: appState.isInstallingUpdate,
+                    canInstallInApp: AppBrand.updateDeveloperTeamIdentifier != nil,
                     onCancel: { hiddenUpdateVersion = update.version },
                     onSkipVersion: {
                         hiddenUpdateVersion = update.version
@@ -412,83 +413,882 @@ struct PreferencesRootView: View {
 
 private struct PrivacyOnboardingView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var setupStep: ScrivoraSetupStep = .welcome
+    @State private var selectedProfile: PrivacyProfile = .maximumPrivacy
+    @State private var selectedModelID = "fluidaudio-parakeet-v3"
+    @State private var hasOpenedAccessibilitySettings = false
+
+    private var setupModels: [ASRModelInfo] {
+        appState.modelCatalog.models
+            .filter { $0.backend == .fluidAudio && $0.isProductionReady }
+    }
+
+    private var selectedSetupModel: ASRModelInfo? {
+        appState.modelCatalog.model(id: selectedModelID)
+    }
+
+    private var permissionsReady: Bool {
+        appState.microphonePermission == .granted && appState.accessibilityPermission == .granted
+    }
+
+    private var microphoneReady: Bool {
+        appState.microphonePermission == .granted
+    }
+
+    private var accessibilityReady: Bool {
+        appState.accessibilityPermission == .granted
+    }
+
+    private var modelReady: Bool {
+        guard let selectedSetupModel else { return false }
+        return appState.isModelDownloaded(selectedSetupModel)
+    }
+
+    private var selectedModelDownloading: Bool {
+        guard let selectedSetupModel else { return false }
+        return appState.isModelDownloading(selectedSetupModel)
+    }
+
+    private var currentStepIndex: Int {
+        ScrivoraSetupStep.allCases.firstIndex(of: setupStep) ?? 0
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                PageHeader(
-                    title: "Choose Privacy",
-                    subtitle: "Pick what Scrivora may save locally on this Mac.",
-                    systemImage: "lock.shield.fill",
-                    accent: BrandColor.mutedSage
-                )
+        ZStack {
+            AppCanvasBackground()
+            VStack(spacing: 0) {
+                onboardingHeader
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
-                    PrivacyChoiceCard(
-                        profile: .maximumPrivacy,
-                        title: "Maximum Privacy",
-                        detail: "No transcript history, no learning memory, no target app names in logs.",
-                        systemImage: "lock.fill"
-                    )
-                    PrivacyChoiceCard(
-                        profile: .balancedLocalMemory,
-                        title: "Balanced Local Memory",
-                        detail: "Saves transcript history and corrections locally so cleanup can improve.",
-                        systemImage: "sparkles"
-                    )
+                HStack(spacing: 0) {
+                    onboardingVisual
+                        .frame(width: 420)
+                    Divider()
+                        .opacity(0.48)
+                    stepSurface
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: 1_120, maxHeight: 650)
+                .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor).opacity(0.28), lineWidth: 1)
+                )
+                .shadow(color: BrandColor.charcoal.opacity(0.08), radius: 28, y: 16)
+            }
+            .padding(28)
+        }
+        .tint(BrandColor.terracotta)
+        .onAppear {
+            appState.refreshPermissions()
+            if let selected = appState.selectedModel, selected.backend == .fluidAudio {
+                selectedModelID = selected.id
+            } else if appState.modelCatalog.model(id: selectedModelID) == nil,
+                      let fallback = setupModels.first {
+                selectedModelID = fallback.id
+            }
+        }
+        .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+            if setupStep == .permissions || !permissionsReady {
+                appState.refreshPermissions()
+            }
+        }
+    }
 
-                Panel("Permission Use") {
-                    Text("Scrivora needs Accessibility permission only to detect your dictation trigger and paste the final text into the app you are using. Your audio is transcribed locally.")
-                        .font(.callout)
+    private var onboardingHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            HStack(spacing: 10) {
+                ScrivoraAppIconMark()
+                    .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scrivora")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Private dictation setup")
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 34)
-            .padding(.vertical, 30)
-            .frame(maxWidth: 980, alignment: .topLeading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            Spacer()
+            OnboardingStepDots(currentIndex: currentStepIndex)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(maxWidth: 1_120)
+        .padding(.bottom, 18)
+    }
+
+    private var onboardingVisual: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            Spacer(minLength: 0)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                BrandColor.terracotta.opacity(0.13),
+                                BrandColor.mutedSage.opacity(0.09),
+                                Color.white.opacity(0.32)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                ScrivoraOnboardingSignal(isActive: selectedModelDownloading || setupStep == .permissions)
+                    .padding(42)
+            }
+            .frame(width: 300, height: 300)
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(visualKicker)
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(BrandColor.terracottaDeep)
+                    Text(visualTitle)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(BrandColor.charcoal)
+                }
+                .padding(18)
+            }
+
+            VStack(alignment: .leading, spacing: 11) {
+                OnboardingProofRow(systemImage: "lock.shield.fill", title: "No account", detail: "No sign-in, no card, no cloud speech API.")
+                OnboardingProofRow(systemImage: "bolt.fill", title: "Realtime", detail: "Speech streams into text in chunks.")
+                OnboardingProofRow(systemImage: "keyboard", title: "Works anywhere", detail: "Hold Control and speak into the current app.")
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 44)
+        .padding(.vertical, 38)
+    }
+
+    private var stepSurface: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            stepContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding(.horizontal, 46)
+                .padding(.top, 44)
+                .padding(.bottom, 20)
+
+            OnboardingFooter(
+                secondaryTitle: secondaryActionTitle,
+                secondarySystemImage: secondaryActionSystemImage,
+                primaryTitle: primaryActionTitle,
+                primarySystemImage: primaryActionSystemImage,
+                primaryDisabled: primaryActionDisabled,
+                onSecondary: secondaryAction,
+                onPrimary: primaryAction
+            )
+        }
+    }
+
+    @ViewBuilder private var stepContent: some View {
+        switch setupStep {
+        case .welcome:
+            welcomeStep
+        case .privacy:
+            privacyStep
+        case .model:
+            modelStep
+        case .permissions:
+            permissionsStep
+        case .ready:
+            readyStep
+        }
+    }
+
+    private var welcomeStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            stepHeader(
+                eyebrow: "Start",
+                title: "Private dictation for your Mac.",
+                subtitle: "Scrivora turns speech into text locally, then inserts it where you are already working."
+            )
+
+            VStack(spacing: 10) {
+                OnboardingCapabilityRow(title: "Lives in the menu bar", detail: "Scrivora stays out of the way until you dictate or open settings.", systemImage: "menubar.rectangle")
+                OnboardingCapabilityRow(title: "Choose a local model", detail: "Download one Parakeet model and keep speech recognition on-device.", systemImage: "cube.transparent")
+                OnboardingCapabilityRow(title: "Allow two permissions", detail: "Microphone records audio. Accessibility lets the shortcut work in other apps.", systemImage: "checkmark.shield.fill")
+            }
+        }
+    }
+
+    private var privacyStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            stepHeader(
+                eyebrow: "Privacy",
+                title: "Everything private. Nothing leaves your device.",
+                subtitle: "Pick how much local memory Scrivora may keep. You can change this later."
+            )
+
+            VStack(spacing: 12) {
+                OnboardingChoiceRow(
+                    profile: .maximumPrivacy,
+                    title: "Maximum Privacy",
+                    detail: "No transcript history or learning memory. Best for a fresh private setup.",
+                    systemImage: "lock.fill",
+                    isSelected: selectedProfile == .maximumPrivacy,
+                    onSelect: { selectedProfile = .maximumPrivacy }
+                )
+                OnboardingChoiceRow(
+                    profile: .balancedLocalMemory,
+                    title: "Balanced Local Memory",
+                    detail: "Keeps local history and corrections on this Mac so cleanup can improve.",
+                    systemImage: "text.badge.checkmark",
+                    isSelected: selectedProfile == .balancedLocalMemory,
+                    onSelect: { selectedProfile = .balancedLocalMemory }
+                )
+            }
+        }
+    }
+
+    private var modelStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            stepHeader(
+                eyebrow: "Speech model",
+                title: modelStepTitle,
+                subtitle: modelStepSubtitle
+            )
+
+            if selectedModelDownloading {
+                OnboardingDownloadState(
+                    model: selectedSetupModel,
+                    progress: selectedSetupModel.flatMap { appState.downloadProgress(for: $0) },
+                    message: appState.modelDownloadMessage
+                )
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(setupModels) { model in
+                        OnboardingModelRow(
+                            model: model,
+                            isSelected: selectedModelID == model.id,
+                            isDownloaded: appState.isModelDownloaded(model),
+                            onSelect: {
+                                selectedModelID = model.id
+                                if appState.isModelDownloaded(model) {
+                                    appState.selectModel(model)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            if let message = appState.modelDownloadMessage,
+               !selectedModelDownloading,
+               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Label(message, systemImage: "info.circle")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var permissionsStep: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            stepHeader(
+                eyebrow: "Permissions",
+                title: "Allow Scrivora to listen and type.",
+                subtitle: "Grant two macOS permissions once, then Scrivora works from any app."
+            )
+
+            VStack(spacing: 12) {
+                OnboardingPermissionCard(
+                    title: "Microphone",
+                    detail: "Required to record your dictation.",
+                    state: appState.microphonePermission,
+                    systemImage: "mic.fill",
+                    actionTitle: "Grant",
+                    actionSystemImage: "checkmark.circle.fill",
+                    onAction: appState.requestMicrophonePermission
+                )
+                OnboardingPermissionCard(
+                    title: "Accessibility",
+                    detail: "Required for the Control trigger and insertion in other apps.",
+                    state: appState.accessibilityPermission,
+                    systemImage: "accessibility",
+                    actionTitle: "Grant",
+                    actionSystemImage: "arrow.up.forward.app.fill",
+                    onAction: {
+                        hasOpenedAccessibilitySettings = true
+                        appState.requestAccessibilityPermission()
+                    }
+                )
+            }
+
+            Text(permissionHint)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var readyStep: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            stepHeader(
+                eyebrow: "Ready",
+                title: "Scrivora is ready.",
+                subtitle: "Hold Control and speak. Scrivora stays in the menu bar and writes into the app you are using."
+            )
+
+            VStack(spacing: 12) {
+                OnboardingCapabilityRow(title: "Model", detail: selectedSetupModel?.displayName ?? "Local Parakeet model", systemImage: "cube.transparent")
+                OnboardingCapabilityRow(title: "Shortcut", detail: "Hold Control to dictate from any app.", systemImage: "keyboard")
+                OnboardingCapabilityRow(title: "Privacy", detail: selectedProfile == .maximumPrivacy ? "Maximum Privacy is active." : "Balanced Local Memory is active.", systemImage: "lock.shield.fill")
+            }
+        }
+    }
+
+    private func stepHeader(eyebrow: String, title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(eyebrow)
+                .font(.caption.weight(.bold))
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .foregroundStyle(BrandColor.terracottaDeep)
+            Text(title)
+                .font(.system(size: 38, weight: .bold))
+                .foregroundStyle(BrandColor.charcoal)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var visualKicker: String {
+        switch setupStep {
+        case .welcome: "On-device"
+        case .privacy: "Local only"
+        case .model: selectedModelDownloading ? "Downloading" : "Speech"
+        case .permissions: "macOS access"
+        case .ready: "Ready"
+        }
+    }
+
+    private var visualTitle: String {
+        switch setupStep {
+        case .welcome: "Speak. Text. Done."
+        case .privacy: "No account. No cloud speech."
+        case .model: selectedModelDownloading ? "Preparing your model." : "Pick one local model."
+        case .permissions: permissionsReady ? "Permissions granted." : "Two macOS approvals."
+        case .ready: "Start from the menu bar."
+        }
+    }
+
+    private var modelStepTitle: String {
+        if selectedModelDownloading { return "Downloading your local model." }
+        if modelReady { return "Model is ready." }
+        return "Choose your local AI."
+    }
+
+    private var modelStepSubtitle: String {
+        if selectedModelDownloading {
+            return "Keep Scrivora open. The model is downloaded once and then reused offline."
+        }
+        return "Parakeet models run through the built-in FluidAudio path, so no whisper.cpp setup is required."
+    }
+
+    private var permissionHint: String {
+        if permissionsReady { return "Both permissions are granted. Continue to finish setup." }
+        if !microphoneReady { return "macOS will show a Microphone prompt. Choose Allow." }
+        if hasOpenedAccessibilitySettings { return "Turn on Scrivora in System Settings, then return here. The row will update automatically." }
+        return "Accessibility lets the Control shortcut work while another app is focused."
+    }
+
+    private var primaryActionTitle: String {
+        switch setupStep {
+        case .welcome, .privacy:
+            return "Continue"
+        case .model:
+            if selectedModelDownloading { return "Downloading" }
+            if modelReady { return "Continue" }
+            return "Download Model"
+        case .permissions:
+            if !microphoneReady { return "Allow Microphone" }
+            if !accessibilityReady { return "Open Accessibility" }
+            return "Continue"
+        case .ready:
+            return "Start Scrivora"
+        }
+    }
+
+    private var primaryActionSystemImage: String {
+        switch setupStep {
+        case .welcome, .privacy:
+            return "arrow.right"
+        case .model:
+            if selectedModelDownloading { return "arrow.down.circle" }
+            if modelReady { return "arrow.right" }
+            return "arrow.down.circle.fill"
+        case .permissions:
+            if !microphoneReady { return "mic.badge.plus" }
+            if !accessibilityReady { return "switch.2" }
+            return "arrow.right"
+        case .ready:
+            return "checkmark.circle.fill"
+        }
+    }
+
+    private var primaryActionDisabled: Bool {
+        setupStep == .model && (selectedModelDownloading || selectedSetupModel == nil)
+    }
+
+    private var secondaryActionTitle: String? {
+        switch setupStep {
+        case .welcome:
+            return nil
+        default:
+            return "Back"
+        }
+    }
+
+    private var secondaryActionSystemImage: String? {
+        "chevron.left"
+    }
+
+    private func primaryAction() {
+        switch setupStep {
+        case .welcome:
+            setupStep = .privacy
+        case .privacy:
+            setupStep = .model
+        case .model:
+            guard let selectedSetupModel else { return }
+            if modelReady {
+                setupStep = .permissions
+            } else {
+                selectedModelID = selectedSetupModel.id
+                appState.downloadModel(selectedSetupModel)
+            }
+        case .permissions:
+            if !microphoneReady {
+                appState.requestMicrophonePermission()
+            } else if !accessibilityReady {
+                hasOpenedAccessibilitySettings = true
+                appState.requestAccessibilityPermission()
+            } else {
+                setupStep = .ready
+            }
+        case .ready:
+            finishSetup()
+        }
+    }
+
+    private func secondaryAction() {
+        guard currentStepIndex > 0 else { return }
+        setupStep = ScrivoraSetupStep.allCases[currentStepIndex - 1]
+    }
+
+    private func finishSetup() {
+        guard microphoneReady, accessibilityReady, modelReady else { return }
+        if let selectedSetupModel, appState.isModelDownloaded(selectedSetupModel) {
+            appState.selectModel(selectedSetupModel)
+        }
+        appState.applyPrivacyChoice(selectedProfile)
+    }
+
+}
+
+private enum ScrivoraSetupStep: Int, CaseIterable, Equatable {
+    case welcome
+    case privacy
+    case model
+    case permissions
+    case ready
+}
+
+private struct OnboardingStepDots: View {
+    var currentIndex: Int
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ForEach(ScrivoraSetupStep.allCases.indices, id: \.self) { index in
+                Capsule()
+                    .fill(index == currentIndex ? BrandColor.charcoal : Color(nsColor: .separatorColor).opacity(0.55))
+                    .frame(width: index == currentIndex ? 26 : 7, height: 7)
+                    .animation(.spring(response: 0.24, dampingFraction: 0.82), value: currentIndex)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
-private struct PrivacyChoiceCard: View {
-    @EnvironmentObject private var appState: AppState
-    var profile: PrivacyProfile
+private struct ScrivoraOnboardingSignal: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var isActive: Bool
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 36, style: .continuous)
+                    .stroke(
+                        index == 1 ? BrandColor.mutedSage.opacity(0.32) : BrandColor.terracotta.opacity(0.28),
+                        lineWidth: 1.2
+                    )
+                    .scaleEffect(reduceMotion ? 1 : 0.82 + CGFloat(index) * 0.12 + (isActive ? 0.02 : 0))
+                    .opacity(0.85 - Double(index) * 0.20)
+            }
+
+            TimelineView(.animation) { context in
+                let phase = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+                HStack(alignment: .center, spacing: 9) {
+                    ForEach(0..<7, id: \.self) { index in
+                        let wave = sin(phase * 4.2 + Double(index) * 0.72)
+                        let height = 24 + max(0, wave) * 48 + (isActive ? 12 : 0)
+                        Capsule()
+                            .fill(index == 3 ? BrandColor.terracotta : BrandColor.charcoal.opacity(0.82))
+                            .frame(width: index == 3 ? 11 : 8, height: height)
+                    }
+                }
+            }
+
+            ScrivoraAppIconMark()
+                .frame(width: 68, height: 68)
+                .shadow(color: BrandColor.terracotta.opacity(0.22), radius: 18, y: 8)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct OnboardingProofRow: View {
+    var systemImage: String
+    var title: String
+    var detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(BrandColor.terracotta)
+                .frame(width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrandColor.charcoal)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct OnboardingCapabilityRow: View {
     var title: String
     var detail: String
     var systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        HStack(alignment: .center, spacing: 13) {
             Image(systemName: systemImage)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(profile == .maximumPrivacy ? BrandColor.mutedSage : BrandColor.terracotta)
-            VStack(alignment: .leading, spacing: 6) {
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(BrandColor.terracotta)
+                .frame(width: 38, height: 38)
+                .background(BrandColor.terracotta.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(BrandColor.charcoal)
                 Text(detail)
-                    .font(.callout)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.24), lineWidth: 1)
+        )
+    }
+}
+
+private struct OnboardingChoiceRow: View {
+    var profile: PrivacyProfile
+    var title: String
+    var detail: String
+    var systemImage: String
+    var isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(isSelected ? Color.white : tint)
+                    .frame(width: 40, height: 40)
+                    .background(isSelected ? tint : tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(BrandColor.charcoal)
+                        if profile == .maximumPrivacy {
+                            StatusPill("Default", color: BrandColor.mutedSage)
+                        }
+                    }
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(isSelected ? tint : .secondary)
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? tint.opacity(0.08) : Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(isSelected ? tint.opacity(0.42) : Color(nsColor: .separatorColor).opacity(0.24), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var tint: Color {
+        profile == .maximumPrivacy ? BrandColor.mutedSage : BrandColor.terracotta
+    }
+}
+
+private struct OnboardingModelRow: View {
+    var model: ASRModelInfo
+    var isSelected: Bool
+    var isDownloaded: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .center, spacing: 14) {
+                ModelGlyph(model: model, size: 42)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(model.displayName)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(BrandColor.charcoal)
+                        if model.id == "fluidaudio-parakeet-v3" {
+                            StatusPill("Recommended", color: BrandColor.terracotta)
+                        }
+                        if isDownloaded {
+                            StatusPill("Downloaded", color: BrandColor.mutedSage)
+                        }
+                    }
+                    Text(modelDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text("\(model.estimatedSizeMB) MB")
+                        Text(model.qualityLabel)
+                        Text(model.speedLabel)
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(isSelected ? BrandColor.terracotta : .secondary)
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? BrandColor.terracotta.opacity(0.08) : Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(isSelected ? BrandColor.terracotta.opacity(0.46) : Color(nsColor: .separatorColor).opacity(0.24), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var modelDescription: String {
+        model.id == "fluidaudio-parakeet-v3"
+            ? "Best default. Multilingual, accurate, and local."
+            : "English-first option for fast local dictation."
+    }
+}
+
+private struct OnboardingDownloadState: View {
+    var model: ASRModelInfo?
+    var progress: Double?
+    var message: String?
+
+    private var clampedProgress: Double? {
+        progress.map { min(1, max(0, $0)) }
+    }
+
+    private var statusTitle: String {
+        guard let clampedProgress else { return "Starting download" }
+        if clampedProgress >= 0.995 { return "Optimizing for this Mac" }
+        return "Downloading - \(Int((clampedProgress * 100).rounded()))%"
+    }
+
+    private var statusDetail: String {
+        if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return message
+        }
+        return "This happens once. After that, Scrivora can use the model locally."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(BrandColor.terracotta.opacity(0.08))
+                ScrivoraOnboardingSignal(isActive: true)
+                    .padding(42)
+            }
+            .frame(height: 220)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(statusTitle)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(BrandColor.charcoal)
+                    .monospacedDigit()
+                Text(statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ModelProgressTrack(progress: clampedProgress, tint: BrandColor.terracotta)
+                    .frame(height: 7)
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.25), lineWidth: 1)
+            )
+
+            if let model {
+                Text("\(model.displayName) is stored under Scrivora's local app data and reused after setup.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct OnboardingPermissionCard: View {
+    var title: String
+    var detail: String
+    var state: PermissionState
+    var systemImage: String
+    var actionTitle: String
+    var actionSystemImage: String
+    var onAction: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: state == .granted ? "checkmark.shield.fill" : systemImage)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(state == .granted ? Color.white : tint)
+                .frame(width: 42, height: 42)
+                .background(state == .granted ? tint : tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(BrandColor.charcoal)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 10)
+
+            if state == .granted {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(BrandColor.mutedSage)
+                        .frame(width: 6, height: 6)
+                    Text("Granted")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrandColor.mutedSage)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(BrandColor.mutedSage.opacity(0.10), in: Capsule())
+            } else {
+                Button {
+                    onAction()
+                } label: {
+                    Label(actionTitle, systemImage: actionSystemImage)
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(state == .granted ? BrandColor.mutedSage.opacity(0.075) : Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(state == .granted ? BrandColor.mutedSage.opacity(0.35) : Color(nsColor: .separatorColor).opacity(0.24), lineWidth: 1)
+        )
+    }
+
+    private var tint: Color {
+        state == .granted ? BrandColor.mutedSage : BrandColor.terracotta
+    }
+}
+
+private struct OnboardingFooter: View {
+    var secondaryTitle: String?
+    var secondarySystemImage: String?
+    var primaryTitle: String
+    var primarySystemImage: String
+    var primaryDisabled: Bool
+    var onSecondary: () -> Void
+    var onPrimary: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let secondaryTitle {
+                Button {
+                    onSecondary()
+                } label: {
+                    Label(secondaryTitle, systemImage: secondarySystemImage ?? "chevron.left")
+                        .frame(minWidth: 96)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+
+            Spacer()
+
             Button {
-                appState.applyPrivacyChoice(profile)
+                onPrimary()
             } label: {
-                Label(profile == .maximumPrivacy ? "Use Default" : "Use \(profile.displayName)", systemImage: "checkmark.circle")
-                    .frame(maxWidth: .infinity)
+                Label(primaryTitle, systemImage: primarySystemImage)
+                    .frame(minWidth: 164)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(primaryDisabled)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
-        )
+        .padding(.horizontal, 46)
+        .padding(.vertical, 20)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor).opacity(0.34))
+                .frame(height: 1)
+        }
     }
 }
 
@@ -2529,17 +3329,9 @@ private struct PermissionsSummaryPanel: View {
                     )
                 }
 
-                HStack {
-                    Label("Audio is transcribed locally. Permissions stay controlled by macOS.", systemImage: "lock.shield")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        appState.refreshPermissions()
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                }
+                Label("Audio is transcribed locally. Permissions stay controlled by macOS.", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -2550,6 +3342,7 @@ private struct UpdateAvailableOverlay: View {
     var currentVersion: String
     var statusMessage: String?
     var isInstalling: Bool
+    var canInstallInApp: Bool
     var onCancel: () -> Void
     var onSkipVersion: () -> Void
     var onReleaseNotes: () -> Void
@@ -2715,21 +3508,21 @@ private struct UpdateAvailableOverlay: View {
             Button("Skip Version", action: onSkipVersion)
                 .disabled(isInstalling)
 
-            Button(action: onInstall) {
+            Button(action: canInstallInApp ? onInstall : onReleaseNotes) {
                 HStack(spacing: 8) {
                     if isInstalling {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "arrow.down.circle.fill")
+                        Image(systemName: canInstallInApp ? "arrow.down.circle.fill" : "arrow.up.right.square")
                     }
-                    Text(isInstalling ? "Updating" : "Update Now")
+                    Text(canInstallInApp ? (isInstalling ? "Updating" : "Update Now") : "Download")
                 }
             }
             .keyboardShortcut(.defaultAction)
             .buttonStyle(.borderedProminent)
             .tint(BrandColor.terracotta)
-            .disabled(isInstalling)
+            .disabled(isInstalling || (!canInstallInApp && update.releaseNotesURL == nil))
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
@@ -3135,7 +3928,7 @@ struct ModelManagerView: View {
     @State private var filter: ModelCatalogFilter = .all
 
     private var visibleModels: [ASRModelInfo] {
-        appState.modelCatalog.models.filter { $0.isProductionReady }
+        appState.modelCatalog.models.filter { appState.shouldShowModelInStandardPicker($0) }
     }
 
     private var filteredModels: [ASRModelInfo] {
@@ -3173,6 +3966,15 @@ struct ModelManagerView: View {
             .frame(maxWidth: 520)
 
             Spacer()
+        }
+
+        if !appState.isWhisperRuntimeAvailable {
+            Label("Whisper models are hidden until whisper.cpp is installed. Parakeet is the built-in local model path for this build.", systemImage: "info.circle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.62), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
 
         if !downloadedModels.isEmpty {
@@ -3299,7 +4101,7 @@ private struct ModelCard: View {
     }
 
     private var isDownloadable: Bool {
-        model.backend == .fluidAudio || model.downloadURL != nil
+        appState.isModelRuntimeAvailable(model) && (model.backend == .fluidAudio || model.downloadURL != nil)
     }
 
     var body: some View {
@@ -3324,21 +4126,7 @@ private struct ModelCard: View {
 
             Spacer(minLength: 8)
 
-            if isDownloaded {
-                Button(role: .destructive) {
-                    confirmDeleteModel = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            } else if isDownloadable {
-                downloadButton
-            } else {
-                Label("Unavailable", systemImage: "clock")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
+            modelActions
         }
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -3378,22 +4166,51 @@ private struct ModelCard: View {
     }
 
     @ViewBuilder
-    private var downloadButton: some View {
-        Button {
-            appState.downloadModel(model)
-        } label: {
+    private var modelActions: some View {
+        VStack(alignment: .trailing, spacing: 8) {
             if isDownloading {
-                HStack(spacing: 7) {
-                    ModelDownloadRing(progress: appState.downloadProgress(for: model), tint: tint)
-                    Text("Downloading")
+                ModelDownloadProgressView(
+                    title: "Downloading",
+                    progress: appState.downloadProgress(for: model),
+                    tint: tint
+                )
+                .frame(width: 180)
+            }
+
+            HStack(spacing: 8) {
+                if isDownloaded {
+                    if !isSelected {
+                        ModelActionButton(
+                            title: "Use",
+                            systemImage: "checkmark.circle",
+                            tint: BrandColor.mutedSage,
+                            action: { appState.selectModel(model) }
+                        )
+                    }
+
+                    Button(role: .destructive) {
+                        confirmDeleteModel = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                } else if isDownloadable {
+                    ModelActionButton(
+                        title: isDownloading ? "Downloading" : "Download",
+                        systemImage: isDownloading ? "arrow.down.circle" : "arrow.down.circle.fill",
+                        tint: tint,
+                        isPrimary: !isDownloading,
+                        isDisabled: isDownloading,
+                        action: { appState.downloadModel(model) }
+                    )
+                } else {
+                    Label("Unavailable", systemImage: "clock")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
-            } else {
-                Label("Download", systemImage: "arrow.down.circle.fill")
             }
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .disabled(isDownloading)
     }
 
     private var cardBackground: Color {
@@ -3409,6 +4226,120 @@ private struct ModelCard: View {
         }
     }
 
+}
+
+private struct ModelActionButton: View {
+    var title: String
+    var systemImage: String
+    var tint: Color
+    var isPrimary = true
+    var isDisabled = false
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .foregroundStyle(isPrimary ? Color.white : tint)
+                .background(background, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(tint.opacity(isPrimary ? 0 : 0.36), lineWidth: 1)
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.72 : 1)
+        .accessibilityLabel(title)
+    }
+
+    private var background: Color {
+        if isPrimary { return tint }
+        return tint.opacity(0.10)
+    }
+}
+
+private struct ModelDownloadProgressView: View {
+    var title: String
+    var progress: Double?
+    var tint: Color
+
+    private var clampedProgress: Double? {
+        progress.map { min(1, max(0, $0)) }
+    }
+
+    private var progressText: String {
+        guard let clampedProgress else { return "Starting" }
+        if clampedProgress >= 0.995 { return "Finishing" }
+        return "\(Int((clampedProgress * 100).rounded()))%"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                ModelDownloadRing(progress: clampedProgress, tint: tint)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text(progressText)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            ModelProgressTrack(progress: clampedProgress, tint: tint)
+                .frame(height: 5)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ModelProgressTrack: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var progress: Double?
+    var tint: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(tint.opacity(0.14))
+
+                if let progress {
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: max(6, proxy.size.width * CGFloat(progress)))
+                } else if reduceMotion {
+                    Capsule()
+                        .fill(tint.opacity(0.45))
+                        .frame(width: proxy.size.width * 0.42)
+                } else {
+                    TimelineView(.animation) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: 1.4) / 1.4
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [tint.opacity(0.16), tint, tint.opacity(0.16)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: proxy.size.width * 0.42)
+                            .offset(x: proxy.size.width * CGFloat(phase) * 1.35 - proxy.size.width * 0.42)
+                    }
+                }
+            }
+            .clipShape(Capsule())
+        }
+    }
 }
 
 private struct ModelGlyph: View {
@@ -4132,7 +5063,7 @@ struct PrivacyView: View {
                 Button {
                     appState.refreshStorageUsage()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Label("Update Size", systemImage: "arrow.clockwise")
                 }
                 Button {
                     appState.openDataFolder()
@@ -4318,14 +5249,25 @@ private struct UpdateControlsPanel: View {
                     }
                     .disabled(appState.isInstallingUpdate)
 
-                    Button {
-                        appState.installAvailableUpdate()
-                    } label: {
-                        Label(appState.isInstallingUpdate ? "Updating" : "Update Now", systemImage: "arrow.down.circle.fill")
+                    if AppBrand.updateDeveloperTeamIdentifier == nil {
+                        Button {
+                            appState.openAvailableUpdateReleaseNotes()
+                        } label: {
+                            Label("Download DMG", systemImage: "arrow.up.right.square")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandColor.terracotta)
+                        .disabled(appState.availableUpdate?.releaseNotesURL == nil || appState.isInstallingUpdate)
+                    } else {
+                        Button {
+                            appState.installAvailableUpdate()
+                        } label: {
+                            Label(appState.isInstallingUpdate ? "Updating" : "Update Now", systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandColor.terracotta)
+                        .disabled(appState.isInstallingUpdate)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(BrandColor.terracotta)
-                    .disabled(appState.isInstallingUpdate)
                 }
             }
         }

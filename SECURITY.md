@@ -80,7 +80,7 @@ Before publishing a public Mac binary:
 - Clean-Mac permission test.
 - Model-license review.
 - Sensitive-file audit.
-- No live `updates/stable.json` until the exact signed updater ZIP and SHA-256
-  exist.
+- `updates/stable.json` must match the exact updater ZIP and SHA-256 uploaded
+  to the GitHub Release.
 
 See `RELEASE_STATUS.md` for the current release state.

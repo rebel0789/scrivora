@@ -73,13 +73,13 @@ Scripts/audit_sensitive_files.sh
 
 ## GitHub Source Release
 
-Private staging remote:
+GitHub remote:
 
 ```text
 https://github.com/rebel0789/scrivora
 ```
 
-Before making the repo public:
+Before publishing source changes:
 
 ```bash
 swift test
@@ -125,7 +125,8 @@ https://scrivora.me/updates/stable.json
 ```
 
 Keep `updates/stable.example.json` and `UPDATE_MANIFEST.example.json` as
-templates until the exact ZIP URL, byte size, and SHA-256 are known.
+templates. Publish `updates/stable.json` only after it matches the exact ZIP
+uploaded to the versioned GitHub Release.
 
 ## Release Scripts
 

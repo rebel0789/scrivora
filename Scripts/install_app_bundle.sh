@@ -18,7 +18,7 @@ pkill -f "/Applications/LocalVoiceFlow.app/Contents/MacOS/LocalVoiceFlowApp" >/d
 pkill -x LocalVoiceFlowApp >/dev/null 2>&1 || true
 pkill -f '/whisper-server -m .*/Library/Application Support/LocalVoiceFlow/Models/ggml-.*\\.bin' >/dev/null 2>&1 || true
 
-"$ROOT/Scripts/package_app_bundle.sh" >/dev/null
+LOCALVOICEFLOW_USE_DEV_SIGNING_IDENTITY="${LOCALVOICEFLOW_USE_DEV_SIGNING_IDENTITY:-1}" "$ROOT/Scripts/package_app_bundle.sh" >/dev/null
 rm -rf "$LEGACY_BUILD_APP"
 
 mkdir -p "$INSTALL_DIR"

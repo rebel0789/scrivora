@@ -1,6 +1,6 @@
 cask "scrivora" do
   version "0.4.1"
-  sha256 "d5dc8bcc6932588e37517a87feae4852f7f1c5bb11a2e64f01813053b23a44c7"
+  sha256 "c394c17f487fdd1153c22804ad3bb0b870bbdea2a83f3cc2477b1239f66a70da"
 
   url "https://github.com/rebel0789/scrivora/releases/download/v#{version}/Scrivora-#{version}-preview-unnotarized.dmg",
       verified: "github.com/rebel0789/scrivora/"

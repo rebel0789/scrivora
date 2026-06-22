@@ -10,6 +10,7 @@ public enum AppBrand {
     public static let legacyProductName = "LocalVoiceFlow"
     public static let bundleIdentifier = "me.scrivora.app"
     public static let websiteURL = "https://scrivora.me"
+    public static let updateManifestURL = "https://scrivora.me/updates/stable.json"
     public static let signingIdentity = "LocalVoiceFlow Development"
     public static let installedAppPath = "/Applications/Scrivora.app"
 

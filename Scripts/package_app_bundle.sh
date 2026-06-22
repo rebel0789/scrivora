@@ -81,7 +81,7 @@ if command -v codesign >/dev/null 2>&1; then
   SIGN_IDENTITY="${LOCALVOICEFLOW_CODESIGN_IDENTITY:-}"
   SIGN_KEYCHAIN="${LOCALVOICEFLOW_CODESIGN_KEYCHAIN:-}"
 
-  if [[ -z "$SIGN_IDENTITY" && -x "$ROOT/Scripts/create_local_codesign_identity.sh" ]]; then
+  if [[ -z "$SIGN_IDENTITY" && "${LOCALVOICEFLOW_USE_DEV_SIGNING_IDENTITY:-0}" == "1" && -x "$ROOT/Scripts/create_local_codesign_identity.sh" ]]; then
     SIGN_IDENTITY="$(LOCALVOICEFLOW_DEV_SIGNING_DIR="$SIGNING_DIR" "$ROOT/Scripts/create_local_codesign_identity.sh")"
     SIGN_KEYCHAIN="$LOCAL_KEYCHAIN"
   fi
@@ -92,7 +92,14 @@ if command -v codesign >/dev/null 2>&1; then
     fi
     EXISTING_KEYCHAINS="$(security list-keychains -d user | sed 's/[" ]//g' | tr '\n' ' ')"
     security list-keychains -d user -s "$SIGN_KEYCHAIN" $EXISTING_KEYCHAINS
-    if codesign --force --deep --sign "$SIGN_IDENTITY" "$APP"; then
+    SIGN_IDENTITY_HASH="$(
+      security find-identity -p codesigning -v "$SIGN_KEYCHAIN" 2>/dev/null |
+        awk -v name="$SIGN_IDENTITY" '$0 ~ "\"" name "\"" { print $2; exit }'
+    )"
+    if [[ -n "$SIGN_IDENTITY_HASH" ]]; then
+      SIGN_IDENTITY="$SIGN_IDENTITY_HASH"
+    fi
+    if codesign --force --deep --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$APP"; then
       echo "Signed with $SIGN_IDENTITY"
     else
       codesign --force --deep --sign - "$APP"

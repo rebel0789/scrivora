@@ -607,7 +607,7 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
 
     public init(
         automaticChecksEnabled: Bool = true,
-        manifestURLString: String = "",
+        manifestURLString: String = AppBrand.updateManifestURL,
         includePrerelease: Bool = false,
         lastCheckedAt: Date? = nil,
         dismissedVersion: String? = nil
@@ -630,7 +630,7 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.automaticChecksEnabled = try container.decodeIfPresent(Bool.self, forKey: .automaticChecksEnabled) ?? true
-        self.manifestURLString = try container.decodeIfPresent(String.self, forKey: .manifestURLString) ?? ""
+        self.manifestURLString = try container.decodeIfPresent(String.self, forKey: .manifestURLString) ?? AppBrand.updateManifestURL
         self.includePrerelease = try container.decodeIfPresent(Bool.self, forKey: .includePrerelease) ?? false
         self.lastCheckedAt = try container.decodeIfPresent(Date.self, forKey: .lastCheckedAt)
         self.dismissedVersion = try container.decodeIfPresent(String.self, forKey: .dismissedVersion)

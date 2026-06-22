@@ -30,18 +30,11 @@ Exclude:
 - Local transcripts, recordings, logs, app support folders, and model caches.
 - Future payment, license-key, telemetry, or support systems.
 
-## License Gate
+## License
 
-A public repository needs a real source license. Until `LICENSE` exists, people
-can read the code but do not have clear rights to use, modify, or redistribute
-it.
-
-Pick one license, add `LICENSE`, then update:
-
-- `README.md`
-- `LICENSE_PLAN.md`
-- `THIRD_PARTY_NOTICES.md`
-- GitHub repository license metadata
+Scrivora source is released under the MIT License. Keep `LICENSE`,
+`LICENSE_PLAN.md`, and `THIRD_PARTY_NOTICES.md` current when dependencies or
+redistribution policy changes.
 
 ## Model Policy
 
@@ -54,10 +47,10 @@ requirements, commercial-use terms, and redistribution terms in
 
 ## GitHub Repo Setup
 
-Before flipping the repo public:
+Before publishing changes:
 
-1. Add `LICENSE`.
-2. Keep `SECURITY.md`, `CONTRIBUTING.md`, and `.github/` templates in the repo.
+1. Keep `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, and `.github/` templates
+   in the repo.
 3. Run:
 
    ```bash
@@ -71,7 +64,7 @@ Before flipping the repo public:
    transcripts, recordings, local logs, app bundles, zips, DMGs, keychains,
    certificates, profiles, or signing passwords.
 5. Push to the intended GitHub repository.
-6. Enable GitHub Pages or Vercel only after the domain target is confirmed.
+6. Keep GitHub Pages pointed at `scrivora.me`.
 
 ## Binary Release Boundary
 
@@ -87,7 +80,7 @@ Public DMG and in-app update releases require:
 - A final updater ZIP URL, byte size, and SHA-256.
 
 Keep `updates/stable.example.json` as a template. Publish `updates/stable.json`
-only after it is generated from the exact uploaded updater ZIP.
+only when it matches the exact updater ZIP uploaded to the GitHub Release.
 
 ## Public Positioning
 
@@ -97,13 +90,13 @@ Say this:
 - Core dictation runs locally and does not require an account, card, or cloud
   speech API.
 - Model downloads and update checks are explicit network actions.
-- The source repo is public once the license is added.
-- Public Mac downloads use a signed drag-to-Applications DMG.
+- The source repo is public under MIT.
+- Public Mac downloads use a drag-to-Applications DMG. The free preview is not
+  Apple notarized.
 
 Do not claim this until verified:
 
 - App Store availability.
-- Live auto-updates.
 - Notarized public download.
 - Bundled model redistribution rights.
 - Security bounty or guaranteed response SLA.

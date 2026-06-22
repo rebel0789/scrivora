@@ -5,8 +5,7 @@ update manifest.
 
 ## Source Repo
 
-- [ ] Add `LICENSE`.
-- [ ] Confirm copyright owner text.
+- [ ] Confirm `LICENSE` is present and copyright owner text is current.
 - [ ] Review `MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md`.
 - [ ] Run:
 
@@ -27,7 +26,7 @@ update manifest.
 
 ## GitHub
 
-- [ ] Confirm the intended private staging remote:
+- [ ] Confirm the intended GitHub remote:
 
   ```bash
   git remote -v

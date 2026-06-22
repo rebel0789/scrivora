@@ -27,12 +27,46 @@ enum FluidAudioModelSupport {
     }
 
     @discardableResult
-    static func download(_ model: ASRModelInfo) async throws -> URL {
+    static func download(
+        _ model: ASRModelInfo,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> URL {
         let version = try version(for: model)
+        progress?(0.04)
         try removeIncompleteCacheIfNeeded(for: version)
-        let directory = try await AsrModels.download(version: version)
-        try verifyCacheIntegrity(at: directory, version: version)
+        progress?(0.08)
+        let directory = try await download(version: version, force: false, progress: progress)
+        do {
+            progress?(0.90)
+            try verifyCacheIntegrity(at: directory, version: version) { completed, total in
+                guard total > 0 else { return }
+                progress?(0.90 + (Double(completed) / Double(total)) * 0.08)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            progress?(0.12)
+            let redownloadedDirectory = try await download(version: version, force: true, progress: progress)
+            progress?(0.90)
+            try verifyCacheIntegrity(at: redownloadedDirectory, version: version) { completed, total in
+                guard total > 0 else { return }
+                progress?(0.90 + (Double(completed) / Double(total)) * 0.08)
+            }
+            progress?(1.0)
+            return redownloadedDirectory
+        }
+        progress?(1.0)
         return directory
+    }
+
+    private static func download(
+        version: AsrModelVersion,
+        force: Bool,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> URL {
+        try await AsrModels.download(force: force, version: version) { snapshot in
+            let clamped = min(1, max(0, snapshot.fractionCompleted))
+            progress?(0.10 + clamped * 0.78)
+        }
     }
 
     static func delete(_ model: ASRModelInfo) throws {
@@ -51,8 +85,14 @@ enum FluidAudioModelSupport {
         try fileManager.removeItem(at: directory)
     }
 
-    private static func verifyCacheIntegrity(at directory: URL, version: AsrModelVersion) throws {
-        for (relativePath, expectedSHA256) in pinnedHashes(for: version) {
+    private static func verifyCacheIntegrity(
+        at directory: URL,
+        version: AsrModelVersion,
+        progress: ((_ completed: Int, _ total: Int) -> Void)? = nil
+    ) throws {
+        let hashes = pinnedHashes(for: version).sorted { $0.key < $1.key }
+        for (index, entry) in hashes.enumerated() {
+            let (relativePath, expectedSHA256) = entry
             let url = directory.appendingPathComponent(relativePath)
             guard FileManager.default.fileExists(atPath: url.path) else {
                 throw LocalVoiceFlowError.modelUnavailable("FluidAudio model cache is missing \(relativePath).")
@@ -61,6 +101,7 @@ enum FluidAudioModelSupport {
             guard actual == expectedSHA256 else {
                 throw LocalVoiceFlowError.modelUnavailable("FluidAudio model cache failed integrity check for \(relativePath).")
             }
+            progress?(index + 1, hashes.count)
         }
     }
 

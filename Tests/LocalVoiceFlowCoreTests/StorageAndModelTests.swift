@@ -28,7 +28,7 @@ struct StorageAndModelTests {
         #expect(settings.dictation.floatingOverlayPalette == .scrivora)
         #expect(settings.dictation.floatingOverlayPlacement == .bottom)
         #expect(settings.updates.automaticChecksEnabled == true)
-        #expect(settings.updates.manifestURLString == "")
+        #expect(settings.updates.manifestURLString == AppBrand.updateManifestURL)
         #expect(settings.updates.includePrerelease == false)
     }
 
@@ -111,7 +111,7 @@ struct StorageAndModelTests {
         #expect(settings.privacy.includeTargetBundleIdentifierInLogs == false)
         #expect(settings.privacy.firstRunPrivacyChoiceCompleted == false)
         #expect(settings.updates.automaticChecksEnabled == true)
-        #expect(settings.updates.manifestURLString == "")
+        #expect(settings.updates.manifestURLString == AppBrand.updateManifestURL)
     }
 
     @Test func settingsDecodeOldCopyOnlyInsertionAsCopyOnlyStrategy() throws {
