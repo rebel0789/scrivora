@@ -12,8 +12,7 @@ cask "scrivora" do
 
   postflight do
     system_command "/usr/bin/xattr",
-                   args: ["-rd", "com.apple.quarantine", "#{appdir}/Scrivora.app"],
-                   sudo: true
+                   args: ["-rd", "com.apple.quarantine", "#{appdir}/Scrivora.app"]
   end
 
   zap trash: [
