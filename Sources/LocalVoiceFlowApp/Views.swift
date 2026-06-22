@@ -652,6 +652,7 @@ private struct PrivacyOnboardingView: View {
                 OnboardingDownloadState(
                     model: selectedSetupModel,
                     progress: selectedSetupModel.flatMap { appState.downloadProgress(for: $0) },
+                    downloadStatus: selectedSetupModel.flatMap { appState.downloadStatus(for: $0) },
                     message: appState.modelDownloadMessage
                 )
             } else {
@@ -1124,6 +1125,7 @@ private struct OnboardingModelRow: View {
 private struct OnboardingDownloadState: View {
     var model: ASRModelInfo?
     var progress: Double?
+    var downloadStatus: ModelDownloadStatus?
     var message: String?
 
     private var clampedProgress: Double? {
@@ -1137,6 +1139,10 @@ private struct OnboardingDownloadState: View {
     }
 
     private var statusDetail: String {
+        if let detail = downloadStatus?.detailText {
+            return detail
+        }
+
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return message
         }
@@ -4172,9 +4178,10 @@ private struct ModelCard: View {
                 ModelDownloadProgressView(
                     title: "Downloading",
                     progress: appState.downloadProgress(for: model),
+                    detail: appState.downloadStatus(for: model)?.detailText,
                     tint: tint
                 )
-                .frame(width: 180)
+                .frame(width: 210)
             }
 
             HStack(spacing: 8) {
@@ -4267,6 +4274,7 @@ private struct ModelActionButton: View {
 private struct ModelDownloadProgressView: View {
     var title: String
     var progress: Double?
+    var detail: String?
     var tint: Color
 
     private var clampedProgress: Double? {
@@ -4296,6 +4304,15 @@ private struct ModelDownloadProgressView: View {
 
             ModelProgressTrack(progress: clampedProgress, tint: tint)
                 .frame(height: 5)
+
+            if let detail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(detail)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
         }
         .accessibilityElement(children: .combine)
     }

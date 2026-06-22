@@ -70,6 +70,8 @@ update manifest.
       disable instructions.
 - [ ] Confirm the DMG mounts, contains `Scrivora.app` plus the Applications
       shortcut, and copied app verification passes.
+- [ ] Confirm onboarding model setup shows progress, transfer speed, and time
+      remaining during the first model download.
 
 ## Paid Developer ID Release
 

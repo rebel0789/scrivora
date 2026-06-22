@@ -30,6 +30,9 @@ Then:
 3. Open Scrivora from the menu bar and grant Microphone and Accessibility when
    macOS asks.
 
+This is the visual drag-and-drop install path. It is the right path to use when
+you want to inspect the DMG window and onboarding flow.
+
 Optional checksum check:
 
 ```bash
@@ -139,6 +142,11 @@ open /Applications/Scrivora.app
 
 Scrivora does not commit speech model weights to this repo.
 
+Model downloads happen once, then Scrivora uses the local files. First-download
+speed depends on the upstream model host and the user's network. The app shows
+download progress, transfer speed, and time remaining so a slow CDN fetch does
+not look frozen.
+
 FluidAudio Parakeet is the main local speech model path:
 
 ```bash
@@ -185,6 +193,26 @@ Scripts/stage_site.sh
 Before attaching a public DMG, also run the clean-Mac install test, verify
 Microphone and Accessibility permissions from a fresh user profile, and confirm
 Gatekeeper accepts the signed artifact.
+
+To check the DMG install view locally, mount the release artifact and inspect the
+Finder window:
+
+```bash
+open .build/release-artifacts/Scrivora-0.4.1-preview-unnotarized.dmg
+open /Volumes/Scrivora
+```
+
+Drag `Scrivora.app` into Applications, then verify the copied app:
+
+```bash
+xattr -l /Applications/Scrivora.app
+codesign --verify --deep --strict --verbose=2 /Applications/Scrivora.app
+open /Applications/Scrivora.app
+```
+
+For the lowest-friction free install route on strict macOS systems, use the
+Homebrew cask path above. A warning-free DMG for everyone requires Developer ID
+signing and Apple notarization.
 
 ## Website And Updates
 

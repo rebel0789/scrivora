@@ -1,6 +1,6 @@
 {
   "appID": "me.scrivora.app",
-  "archiveSizeBytes": 4534147,
+  "archiveSizeBytes": 4540959,
   "build": "1",
   "channel": "stable",
   "critical": false,
@@ -8,10 +8,10 @@
   "minimumSystemVersion": "14.0",
   "notes": [
     "Realtime local dictation with chunked transcription.",
-    "Private onboarding with model selection and permission setup.",
+    "Model downloads show progress, transfer speed, and time remaining.",
     "Free release path opens the DMG release page from update checks."
   ],
   "releaseNotesURL": "https://scrivora.me/releases/v0.4.1.html",
-  "sha256": "fd48b5f72d424d39cb93a13fc1919aca430982ba5419a1c2e28659a90029e52f",
+  "sha256": "0de76446b3cb413aeef8b9dfbd74065fcbf3ad92927928476bd03753b18c0d64",
   "version": "0.4.1"
 }

@@ -26,6 +26,7 @@ themselves.
 | Vercel | Static bundle prepared | Re-authenticate Vercel and attach `scrivora.me` only after confirmation. |
 | Mac app DMG | Free preview live | GitHub Release hosts the DMG and checksums. Manual install and Homebrew cask install are supported; notarized Developer ID build remains a later track. |
 | In-app update manifest | Ready for metadata feed | `updates/stable.json` points at the GitHub Release ZIP and release notes. Free builds open the release page for download. |
+| Model downloads | On-demand | First download depends on upstream CDN speed. App UI now shows progress, transfer speed, and ETA; mirroring is a separate license and infrastructure decision. |
 
 ## Current Product Scope
 
@@ -37,6 +38,7 @@ Included in the first public source release:
 - Local FluidAudio Parakeet V2/V3 path.
 - Local whisper.cpp fallback model downloads.
 - Model library UI with explicit download/delete behavior.
+- Model download progress with transfer speed and time remaining.
 - Clipboard insertion and safe copy fallback.
 - Privacy settings, local history controls, redacted export, and sensitive-file audit.
 - Static website, release notes, update-manifest templates, and GitHub workflows.
@@ -115,6 +117,18 @@ brew install --cask scrivora
 ```
 
 Do not ask users to disable Gatekeeper globally.
+
+## Model Download Expectations
+
+Scrivora does not ship model weights inside the DMG. Users choose a model during
+setup, the app downloads it once, verifies it, and then runs dictation locally.
+
+Slow first downloads usually mean the upstream model host or network path is
+slow. The app should make that visible with progress, transfer speed, and ETA.
+The release-safe way to improve raw download speed is a licensed mirror or CDN
+that serves the exact reviewed artifacts. Do not bundle or mirror model files
+until model terms are reviewed and reflected in `MODEL_LICENSES.md` and
+`THIRD_PARTY_NOTICES.md`.
 
 ## Required Before Attaching A Notarized DMG
 

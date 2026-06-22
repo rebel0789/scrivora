@@ -54,6 +54,57 @@ struct StorageUsageItem: Identifiable, Equatable {
     }
 }
 
+struct ModelDownloadStatus: Equatable {
+    var progress: Double
+    var startedAt: Date
+    var updatedAt: Date
+    var estimatedBytes: Int64
+    var downloadedBytes: Int64
+    var speedBytesPerSecond: Double?
+    var etaSeconds: TimeInterval?
+    var phaseText: String?
+
+    var detailText: String {
+        if let phaseText {
+            return phaseText
+        }
+
+        guard let speedBytesPerSecond, speedBytesPerSecond > 1 else {
+            return progress > 0 ? "Measuring speed..." : "Connecting..."
+        }
+
+        let speed = Self.formatSpeed(speedBytesPerSecond)
+        guard let etaSeconds, progress < 0.995 else {
+            return "\(speed) - finishing"
+        }
+
+        return "\(speed) - \(Self.formatDuration(etaSeconds)) left"
+    }
+
+    private static func formatSpeed(_ bytesPerSecond: Double) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(bytesPerSecond.rounded()),
+            countStyle: .file
+        ) + "/s"
+    }
+
+    private static func formatDuration(_ seconds: TimeInterval) -> String {
+        let clamped = max(1, Int(seconds.rounded(.up)))
+        if clamped < 60 {
+            return "\(clamped)s"
+        }
+
+        let minutes = Int(ceil(Double(clamped) / 60.0))
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings
@@ -68,6 +119,7 @@ final class AppState: ObservableObject {
     @Published var modelDownloadMessage: String?
     @Published var downloadingModelID: String?
     @Published var modelDownloadProgress: [String: Double] = [:]
+    @Published var modelDownloadStatus: [String: ModelDownloadStatus] = [:]
     @Published var activeDictationProfile: ResolvedDictationProfile = .fallback
     @Published var correctionRecords: [CorrectionRecord] = []
     @Published var improvementStats = ImprovementStats()
@@ -352,6 +404,100 @@ final class AppState: ObservableObject {
         modelDownloadProgress[model.id]
     }
 
+    func downloadStatus(for model: ASRModelInfo) -> ModelDownloadStatus? {
+        modelDownloadStatus[model.id]
+    }
+
+    private func beginModelDownload(_ model: ASRModelInfo) {
+        let now = Date()
+        modelDownloadProgress[model.id] = 0
+        modelDownloadStatus[model.id] = ModelDownloadStatus(
+            progress: 0,
+            startedAt: now,
+            updatedAt: now,
+            estimatedBytes: estimatedDownloadBytes(for: model),
+            downloadedBytes: 0,
+            speedBytesPerSecond: nil,
+            etaSeconds: nil,
+            phaseText: initialDownloadPhaseText(for: model)
+        )
+    }
+
+    private func updateModelDownload(_ model: ASRModelInfo, progress rawProgress: Double) {
+        let progress = min(1, max(0, rawProgress))
+        let now = Date()
+        let previous = modelDownloadStatus[model.id]
+        let startedAt = previous?.startedAt ?? now
+        let estimatedBytes = previous?.estimatedBytes ?? estimatedDownloadBytes(for: model)
+        let measuredProgress = measuredDownloadProgress(for: model, progress: progress)
+        let downloadedBytes = Int64((Double(estimatedBytes) * measuredProgress).rounded(.down))
+        let elapsed = max(0, now.timeIntervalSince(startedAt))
+        let averageSpeed = elapsed >= 0.75 && downloadedBytes > 0 && measuredProgress < 0.995
+            ? Double(downloadedBytes) / elapsed
+            : nil
+
+        let speed = averageSpeed ?? previous?.speedBytesPerSecond
+        let phaseText = downloadPhaseText(for: model, progress: progress)
+        let remainingBytes = max(0, estimatedBytes - downloadedBytes)
+        let eta = phaseText == nil ? speed.flatMap { value -> TimeInterval? in
+            guard value > 1, measuredProgress < 0.995 else { return nil }
+            return Double(remainingBytes) / value
+        } : nil
+
+        modelDownloadProgress[model.id] = progress
+        modelDownloadStatus[model.id] = ModelDownloadStatus(
+            progress: progress,
+            startedAt: startedAt,
+            updatedAt: now,
+            estimatedBytes: estimatedBytes,
+            downloadedBytes: downloadedBytes,
+            speedBytesPerSecond: speed,
+            etaSeconds: eta,
+            phaseText: phaseText
+        )
+    }
+
+    private func estimatedDownloadBytes(for model: ASRModelInfo) -> Int64 {
+        Int64(max(1, model.estimatedSizeMB)) * 1_000_000
+    }
+
+    private func initialDownloadPhaseText(for model: ASRModelInfo) -> String? {
+        switch model.backend {
+        case .fluidAudio:
+            return "Preparing local model..."
+        case .whisperCpp, .whisperKit, .mock, .sherpaOnnx, .moonshine:
+            return nil
+        }
+    }
+
+    private func downloadPhaseText(for model: ASRModelInfo, progress: Double) -> String? {
+        switch model.backend {
+        case .fluidAudio:
+            if progress < 0.10 { return "Preparing local model..." }
+            if progress >= 0.90 && progress < 0.995 { return "Verifying local files..." }
+            if progress >= 0.995 { return "Finishing..." }
+            return nil
+        case .whisperCpp:
+            if progress >= 0.995 { return "Finishing..." }
+            return nil
+        case .whisperKit, .mock, .sherpaOnnx, .moonshine:
+            return nil
+        }
+    }
+
+    private func measuredDownloadProgress(for model: ASRModelInfo, progress: Double) -> Double {
+        switch model.backend {
+        case .fluidAudio:
+            if progress <= 0.10 { return 0 }
+            if progress >= 0.90 { return 1 }
+            return min(1, max(0, (progress - 0.10) / 0.78))
+        case .whisperCpp:
+            return progress
+        case .whisperKit, .mock, .sherpaOnnx, .moonshine:
+            return progress
+        }
+    }
+
     var isWhisperRuntimeAvailable: Bool {
         resolvedWhisperExecutable() != nil || resolvedWhisperServerExecutable() != nil
     }
@@ -429,24 +575,25 @@ final class AppState: ObservableObject {
 
         modelDownloadMessage = "Downloading \(model.displayName)..."
         downloadingModelID = model.id
-        modelDownloadProgress[model.id] = 0
+        beginModelDownload(model)
         Task {
             defer {
                 downloadingModelID = nil
                 modelDownloadProgress[model.id] = nil
+                modelDownloadStatus[model.id] = nil
             }
             do {
                 switch model.backend {
                 case .whisperCpp:
                     _ = try await ModelDownloader().download(model: model, to: modelStorage) { [weak self] progress in
                         Task { @MainActor in
-                            self?.modelDownloadProgress[model.id] = progress
+                            self?.updateModelDownload(model, progress: progress)
                         }
                     }
                 case .fluidAudio:
                     _ = try await FluidAudioModelSupport.download(model) { [weak self] progress in
                         Task { @MainActor in
-                            self?.modelDownloadProgress[model.id] = progress
+                            self?.updateModelDownload(model, progress: progress)
                         }
                     }
                 default:
@@ -475,6 +622,7 @@ final class AppState: ObservableObject {
                 }
             }
             modelDownloadProgress[model.id] = nil
+            modelDownloadStatus[model.id] = nil
             modelDownloadMessage = "Deleted \(model.displayName)."
         } catch {
             modelDownloadMessage = error.localizedDescription

@@ -43,41 +43,59 @@ It should not remove unrelated user data.
    test ! -d /Applications/Scrivora.app
    ```
 
-3. Install and open:
+3. Install and open from a local development bundle:
 
    ```bash
    Scripts/install_app_bundle.sh
    open /Applications/Scrivora.app
    ```
 
-4. First launch:
+4. For DMG click-through QA, use the packaged preview DMG instead:
+
+   ```bash
+   open .build/release-artifacts/Scrivora-0.4.1-preview-unnotarized.dmg
+   open /Volumes/Scrivora
+   ```
+
+   In Finder, confirm the mounted window shows `Scrivora.app` and the
+   Applications shortcut. Drag `Scrivora.app` into Applications, then run:
+
+   ```bash
+   xattr -l /Applications/Scrivora.app
+   codesign --verify --deep --strict --verbose=2 /Applications/Scrivora.app
+   open /Applications/Scrivora.app
+   ```
+
+5. First launch:
 
    - Verify the first-run privacy choice appears.
    - Select Maximum Privacy.
    - Verify transcript history is off.
    - Verify learning memory is off.
 
-5. Permissions:
+6. Permissions:
 
    - Grant Microphone.
    - Grant Accessibility.
    - Quit and reopen.
    - Verify permissions do not repeatedly prompt.
 
-6. Offline Mode:
+7. Offline Mode:
 
    - Enable Offline Mode before downloading a model.
    - Attempt a model download.
    - Verify the download is blocked.
    - Disable Offline Mode.
 
-7. Model setup:
+8. Model setup:
 
    - Download Parakeet V2 or V3.
+   - Verify the model download screen shows progress, transfer speed, and time
+     remaining.
    - Verify the downloaded model is selectable.
    - Verify the app handles a missing model without crashing.
 
-8. Dictation:
+9. Dictation:
 
    - Open Notes.
    - Focus a note.
@@ -86,19 +104,19 @@ It should not remove unrelated user data.
    - Release Control.
    - Verify final text appears or remains copied for fallback paste.
 
-9. Paste target behavior:
+10. Paste target behavior:
 
    - Start dictation in Notes.
    - Switch to TextEdit before release.
    - Verify Scrivora does not paste into the wrong app.
 
-10. Privacy export:
+11. Privacy export:
 
     - Export a redacted debug package.
     - Confirm transcript text is absent.
     - Confirm target app metadata is absent.
 
-11. Temp audio audit:
+12. Temp audio audit:
 
     ```bash
     Scripts/audit_sensitive_files.sh
@@ -106,7 +124,7 @@ It should not remove unrelated user data.
 
     Confirm no `ScrivoraTempAudio-*.wav` files are left behind.
 
-12. Cleanup:
+13. Cleanup:
 
     ```bash
     Scripts/reset_local_test_state.sh --delete --app --app-support

@@ -43,6 +43,41 @@ Do not ask users to disable Gatekeeper globally. A fully trusted public DMG
 still requires Developer ID signing, notarization, stapling, and Gatekeeper
 verification.
 
+## DMG Click-Through QA
+
+Use this when checking the visual install flow before publishing or replacing a
+release asset:
+
+```bash
+open .build/release-artifacts/Scrivora-0.4.1-preview-unnotarized.dmg
+open /Volumes/Scrivora
+```
+
+Verify the mounted window contains `Scrivora.app` and the Applications shortcut.
+Then drag `Scrivora.app` into Applications and run:
+
+```bash
+xattr -l /Applications/Scrivora.app
+codesign --verify --deep --strict --verbose=2 /Applications/Scrivora.app
+open /Applications/Scrivora.app
+```
+
+For the free preview, a manually downloaded DMG may still carry quarantine. That
+is expected for an unnotarized app. The Homebrew cask is the cleanest free path
+because it removes quarantine from Scrivora only after the user trusts the tap.
+
+## Model Download Performance
+
+Speech model downloads are not bundled with the app. They happen on demand from
+the upstream model host, so first-download speed depends on the CDN route and the
+user's network. After a model is downloaded, dictation uses local files.
+
+The app must show progress, transfer speed, and time remaining during model
+setup. If first-download speed becomes a release blocker, the next real fix is a
+licensed mirror or CDN under Scrivora control. Do not bundle or mirror model
+weights until `MODEL_LICENSES.md` and `THIRD_PARTY_NOTICES.md` are reviewed for
+that exact artifact.
+
 ## Local Development Install
 
 Build, install, and open a local app bundle:

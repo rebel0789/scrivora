@@ -31,6 +31,7 @@ brew install --cask scrivora
 
 - Fresh onboarding for privacy, model selection, and macOS permissions.
 - Parakeet V3 default local transcription path.
+- Model downloads now show progress, transfer speed, and time remaining.
 - Safer model selection when a saved model is missing or unsupported.
 - Menu bar app behavior, latest transcript copy, and update metadata flow.
 - Static website and update feed at `https://scrivora.me`.
