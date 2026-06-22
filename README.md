@@ -55,8 +55,8 @@ rm -rf "/Applications/Scrivora.app"
 brew install --cask --no-quarantine scrivora
 ```
 
-The cask also removes quarantine from `Scrivora.app` after installation. It does
-not disable Gatekeeper globally.
+The `--no-quarantine` flag prevents Homebrew from adding quarantine to Scrivora.
+It does not disable Gatekeeper globally.
 
 ### macOS Says "App Is Damaged"
 

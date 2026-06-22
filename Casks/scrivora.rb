@@ -10,12 +10,6 @@ cask "scrivora" do
 
   app "Scrivora.app"
 
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-rd", "com.apple.quarantine", "#{appdir}/Scrivora.app"],
-                   sudo: true
-  end
-
   zap trash: [
     "~/Library/Application Support/LocalVoiceFlow",
     "~/Library/Application Support/Scrivora",
@@ -26,7 +20,9 @@ cask "scrivora" do
 
   caveats <<~EOS
     Scrivora's free preview DMG is not Apple notarized.
-    The cask postflight removes quarantine from Scrivora.app only.
+
+    To avoid the macOS damaged-app warning on the free preview, install with:
+      brew install --cask --no-quarantine scrivora
 
     If macOS still says the app is damaged, run:
       sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"

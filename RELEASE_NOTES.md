@@ -11,7 +11,7 @@ No account. No card. Core dictation does not use a cloud speech API.
 
 ## Homebrew
 
-Homebrew can install the free preview without quarantine:
+Homebrew can install the free preview without adding quarantine:
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
