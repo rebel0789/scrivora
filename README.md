@@ -17,7 +17,7 @@ The website is live at `https://scrivora.me`.
 
 ### Option A: Manual Download
 
-Download the macOS preview DMG from the GitHub release:
+Download the macOS DMG from the GitHub release:
 
 ```text
 https://github.com/rebel0789/scrivora/releases/tag/v0.4.1
@@ -40,27 +40,29 @@ Compare the result with `SHA256SUMS.txt` on the GitHub release.
 
 ### Option B: Homebrew
 
-Homebrew is optional. It is useful because the cask removes quarantine from
-`Scrivora.app` after installation.
+Homebrew is optional. It is the cleanest free install path when macOS is strict
+about unnotarized apps.
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask scrivora
+brew install --cask --no-quarantine scrivora
 ```
 
 If Homebrew says the app already exists:
 
 ```bash
 rm -rf "/Applications/Scrivora.app"
-brew install --cask scrivora
+brew install --cask --no-quarantine scrivora
 ```
 
-The preview DMG is open source and free, but it is not Apple notarized. Some
-macOS versions show a damaged-app warning for unnotarized apps.
+The cask also removes quarantine from `Scrivora.app` after installation. It does
+not disable Gatekeeper globally.
 
 ### macOS Says "App Is Damaged"
 
-Open Terminal and run:
+The free DMG is not Apple notarized yet. Some macOS versions show a damaged-app
+warning for unnotarized open-source apps. If that happens after you drag
+Scrivora into Applications, open Terminal and run:
 
 ```bash
 sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
@@ -70,7 +72,8 @@ open "/Applications/Scrivora.app"
 You can also open System Settings, go to Privacy & Security, and choose
 Open Anyway after macOS blocks the app.
 
-This removes quarantine only from Scrivora. Do not disable Gatekeeper globally.
+This removes quarantine only from Scrivora. Do not disable Gatekeeper globally
+and do not run broad quarantine commands over your whole Applications folder.
 
 ## What It Does
 

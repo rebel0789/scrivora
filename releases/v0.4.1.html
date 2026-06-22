@@ -370,7 +370,7 @@
 
       <aside class="release-card" aria-label="Release channel">
         <strong>Release channel</strong>
-        <p>Free preview DMG. Not Apple notarized. If macOS blocks it, remove quarantine from Scrivora.app after installation.</p>
+        <p>Free OSS preview. Install with the DMG, or use Homebrew with no quarantine. Apple notarization is a later paid signing track.</p>
       </aside>
     </section>
 
@@ -388,7 +388,7 @@
           <strong>macOS</strong>
           <div>
             <h3>If macOS says the app is damaged.</h3>
-            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. This removes quarantine from Scrivora only.</p>
+            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. Homebrew users can install with <code>brew install --cask --no-quarantine scrivora</code>. Do not disable Gatekeeper globally.</p>
           </div>
         </article>
         <article class="note-item">

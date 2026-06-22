@@ -24,7 +24,7 @@ themselves.
 | Website | Live | `https://scrivora.me` is served by GitHub Pages. |
 | GitHub Pages | Live | HTTPS is enforced for `scrivora.me`. |
 | Vercel | Static bundle prepared | Re-authenticate Vercel and attach `scrivora.me` only after confirmation. |
-| Mac app DMG | Free preview artifact | Attach preview DMG and checksums to GitHub Release; notarized Developer ID build remains a later track. |
+| Mac app DMG | Free preview live | GitHub Release hosts the DMG and checksums. Manual install and Homebrew `--no-quarantine` are supported; notarized Developer ID build remains a later track. |
 | In-app update manifest | Ready for metadata feed | `updates/stable.json` points at the GitHub Release ZIP and release notes. Free builds open the release page for download. |
 
 ## Current Product Scope
@@ -92,6 +92,28 @@ to the exact ZIP uploaded to the GitHub Release.
    tracked.
 6. Push to `https://github.com/rebel0789/scrivora`, not a scratch checkout with
    no remote.
+
+## Current Free Mac Install Path
+
+The public download is a free OSS preview. Normal users download the DMG, drag
+Scrivora into Applications, and grant macOS permissions during onboarding.
+
+If macOS blocks the unnotarized app, users should remove quarantine from
+Scrivora only:
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
+open "/Applications/Scrivora.app"
+```
+
+Homebrew users can avoid the extra quarantine prompt:
+
+```bash
+brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
+brew install --cask --no-quarantine scrivora
+```
+
+Do not ask users to disable Gatekeeper globally.
 
 ## Required Before Attaching A Notarized DMG
 

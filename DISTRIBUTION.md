@@ -11,7 +11,7 @@ Use `RELEASE_STATUS.md` for the current release state.
 
 ## User Install
 
-The preview install path should stay this simple:
+The free install path should stay this simple:
 
 1. Download `Scrivora-0.4.1-preview-unnotarized.dmg` from the GitHub release.
 2. Open the DMG.
@@ -20,15 +20,19 @@ The preview install path should stay this simple:
 
 Users do not need Swift, Xcode, or a local build.
 
-Optional Homebrew path once the repository is public:
+Homebrew path:
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask scrivora
+brew install --cask --no-quarantine scrivora
 ```
 
-The free preview DMG is not Apple notarized. If macOS reports that the app is
-damaged, remove quarantine from the installed app only:
+The cask also removes quarantine from `Scrivora.app` in `postflight`. This is
+the same free-route pattern used by other open-source Mac apps that ship before
+Developer ID notarization.
+
+The free preview DMG is not Apple notarized. If macOS reports that Scrivora is
+damaged after manual install, remove quarantine from the installed app only:
 
 ```bash
 sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
