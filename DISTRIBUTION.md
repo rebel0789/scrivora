@@ -28,19 +28,23 @@ brew trust rebel0789/scrivora
 brew install --cask scrivora
 ```
 
-Homebrew requires explicit trust for third-party casks. The cask then removes
-quarantine from `Scrivora.app` only, without disabling Gatekeeper globally.
+Homebrew requires explicit trust for third-party casks. The cask then attempts
+to remove quarantine from `Scrivora.app` only, without disabling Gatekeeper
+globally.
 
-The free preview DMG is not Apple notarized. If macOS reports that Scrivora is
-damaged after manual install, remove quarantine from the installed app only:
+The free preview DMG is not Apple notarized. If macOS reports that Scrivora
+cannot be verified or is damaged after manual install, remove quarantine from
+the downloaded DMG before opening it, then drag the app again:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
-open "/Applications/Scrivora.app"
+xattr -d com.apple.quarantine ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
+open ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
 ```
 
-Do not ask users to disable Gatekeeper globally. A fully trusted public DMG
-still requires Developer ID signing, notarization, stapling, and Gatekeeper
+If the app was already copied into Applications and `xattr` says `Operation not
+permitted`, remove that copied app and reinstall it from the cleaned DMG. Do not
+ask users to disable Gatekeeper globally. A fully trusted public DMG still
+requires Developer ID signing, notarization, stapling, and Gatekeeper
 verification.
 
 ## DMG Click-Through QA
@@ -63,8 +67,9 @@ open /Applications/Scrivora.app
 ```
 
 For the free preview, a manually downloaded DMG may still carry quarantine. That
-is expected for an unnotarized app. The Homebrew cask is the cleanest free path
-because it removes quarantine from Scrivora only after the user trusts the tap.
+is expected for an unnotarized app. Remove quarantine from the DMG before
+opening it if macOS blocks the copied app. Removing quarantine from
+`/Applications/Scrivora.app` can fail on App Management-protected systems.
 
 ## Model Download Performance
 

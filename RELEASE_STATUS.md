@@ -100,12 +100,12 @@ to the exact ZIP uploaded to the GitHub Release.
 The public download is a free OSS preview. Normal users download the DMG, drag
 Scrivora into Applications, and grant macOS permissions during onboarding.
 
-If macOS blocks the unnotarized app, users should remove quarantine from
-Scrivora only:
+If macOS blocks the unnotarized app, users should remove quarantine from the
+downloaded DMG before opening it, then drag Scrivora into Applications again:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
-open "/Applications/Scrivora.app"
+xattr -d com.apple.quarantine ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
+open ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
 ```
 
 Homebrew users can use the cask path:
@@ -117,6 +117,10 @@ brew install --cask scrivora
 ```
 
 Do not ask users to disable Gatekeeper globally.
+
+If `xattr` reports `Operation not permitted` on `/Applications/Scrivora.app`,
+that is macOS App Management protection. Remove the copied app and reinstall
+from a cleaned DMG instead of telling users to run broader security bypasses.
 
 ## Model Download Expectations
 

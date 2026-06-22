@@ -59,25 +59,27 @@ rm -rf "/Applications/Scrivora.app"
 brew install --cask scrivora
 ```
 
-The cask removes quarantine from `Scrivora.app` only. It does not disable
-Gatekeeper globally.
+The cask tries to remove quarantine from `Scrivora.app` only. It does not
+disable Gatekeeper globally.
 
 ### macOS Says "App Is Damaged"
 
-The free DMG is not Apple notarized yet. Some macOS versions show a damaged-app
-warning for unnotarized open-source apps. If that happens after you drag
-Scrivora into Applications, open Terminal and run:
+The free DMG is not Apple notarized yet. Some macOS versions show a warning such
+as "Apple could not verify Scrivora is free of malware" or "Scrivora is damaged."
+If that happens, remove quarantine from the downloaded DMG before opening it,
+then drag Scrivora into Applications again:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
-open "/Applications/Scrivora.app"
+xattr -d com.apple.quarantine ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
+open ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
 ```
 
-You can also open System Settings, go to Privacy & Security, and choose
-Open Anyway after macOS blocks the app.
+Then replace `Scrivora.app` in Applications from the DMG window and open it.
 
-This removes quarantine only from Scrivora. Do not disable Gatekeeper globally
-and do not run broad quarantine commands over your whole Applications folder.
+If you already copied the app and Terminal says `Operation not permitted` while
+removing quarantine from `/Applications/Scrivora.app`, delete the copied app and
+copy it again from the cleaned DMG. Do not disable Gatekeeper globally and do
+not run broad quarantine commands over your whole Applications folder.
 
 ## What It Does
 

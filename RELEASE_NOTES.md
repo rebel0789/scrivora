@@ -11,7 +11,8 @@ No account. No card. Core dictation does not use a cloud speech API.
 
 ## Homebrew
 
-Homebrew can install the free preview and remove quarantine from Scrivora only.
+Homebrew can install the free preview and attempts to remove quarantine from
+Scrivora only.
 Homebrew requires explicit trust for third-party casks:
 
 ```bash
@@ -39,12 +40,13 @@ brew install --cask scrivora
 
 ## macOS warning
 
-This free preview DMG is not Apple notarized. If macOS says Scrivora is damaged
-after you drag it into Applications, remove quarantine from Scrivora only:
+This free preview DMG is not Apple notarized. If macOS says Scrivora cannot be
+verified or is damaged after you drag it into Applications, remove quarantine
+from the downloaded DMG before opening it, then drag Scrivora again:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
-open "/Applications/Scrivora.app"
+xattr -d com.apple.quarantine ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
+open ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg
 ```
 
 Do not disable Gatekeeper globally.

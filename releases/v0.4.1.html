@@ -387,8 +387,8 @@
         <article class="note-item">
           <strong>macOS</strong>
           <div>
-            <h3>If macOS says the app is damaged.</h3>
-            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. Homebrew users should run <code>brew trust rebel0789/scrivora</code> before <code>brew install --cask scrivora</code>. Do not disable Gatekeeper globally.</p>
+            <h3>If macOS cannot verify Scrivora.</h3>
+            <p>Run <code>xattr -d com.apple.quarantine ~/Downloads/Scrivora-0.4.1-preview-unnotarized.dmg</code>, open the DMG again, then drag Scrivora into Applications. If <code>xattr</code> says <code>Operation not permitted</code> on the copied app, delete that copy and reinstall from the cleaned DMG. Do not disable Gatekeeper globally.</p>
           </div>
         </article>
         <article class="note-item">

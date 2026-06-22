@@ -66,8 +66,8 @@ update manifest.
       the GitHub release.
 - [ ] Confirm the README, release page, and GitHub release body include:
       manual download, Homebrew tap/trust/install, SHA-256 check, and the
-      per-app quarantine removal command. Do not include global Gatekeeper
-      disable instructions.
+      DMG quarantine removal command. Do not include global Gatekeeper disable
+      instructions.
 - [ ] Confirm the DMG mounts, contains `Scrivora.app` plus the Applications
       shortcut, and copied app verification passes.
 - [ ] Confirm onboarding model setup shows progress, transfer speed, and time
@@ -143,8 +143,10 @@ update manifest.
       `SHA256SUMS.txt`.
 - [ ] The GitHub release includes the preview DMG, `SHA256SUMS.txt`, source
       tag, and release notes.
-- [ ] The damaged-app instructions remove quarantine from
-      `/Applications/Scrivora.app` only.
+- [ ] The damaged-app instructions remove quarantine from the downloaded DMG
+      before opening it. If app-level quarantine removal fails with
+      `Operation not permitted`, docs tell users to reinstall from the cleaned
+      DMG instead of disabling Gatekeeper globally.
 
 ## Final Developer ID Checks
 
