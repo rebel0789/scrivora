@@ -24,7 +24,7 @@ themselves.
 | Website | Live | `https://scrivora.me` is served by GitHub Pages. |
 | GitHub Pages | Live | HTTPS is enforced for `scrivora.me`. |
 | Vercel | Static bundle prepared | Re-authenticate Vercel and attach `scrivora.me` only after confirmation. |
-| Mac app DMG | Free preview live | GitHub Release hosts the DMG and checksums. Manual install and Homebrew `--no-quarantine` are supported; notarized Developer ID build remains a later track. |
+| Mac app DMG | Free preview live | GitHub Release hosts the DMG and checksums. Manual install and Homebrew cask install are supported; notarized Developer ID build remains a later track. |
 | In-app update manifest | Ready for metadata feed | `updates/stable.json` points at the GitHub Release ZIP and release notes. Free builds open the release page for download. |
 
 ## Current Product Scope
@@ -106,11 +106,12 @@ sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"
 open "/Applications/Scrivora.app"
 ```
 
-Homebrew users can avoid the extra quarantine prompt:
+Homebrew users can use the cask path:
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask --no-quarantine scrivora
+brew trust rebel0789/scrivora
+brew install --cask scrivora
 ```
 
 Do not ask users to disable Gatekeeper globally.

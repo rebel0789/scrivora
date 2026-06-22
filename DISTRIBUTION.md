@@ -24,12 +24,12 @@ Homebrew path:
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask --no-quarantine scrivora
+brew trust rebel0789/scrivora
+brew install --cask scrivora
 ```
 
-The `--no-quarantine` flag is the same free-route pattern used by other
-open-source Mac apps that ship before Developer ID notarization. It avoids the
-quarantine prompt without disabling Gatekeeper globally.
+Homebrew requires explicit trust for third-party casks. The cask then removes
+quarantine from `Scrivora.app` only, without disabling Gatekeeper globally.
 
 The free preview DMG is not Apple notarized. If macOS reports that Scrivora is
 damaged after manual install, remove quarantine from the installed app only:

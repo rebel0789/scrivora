@@ -65,7 +65,7 @@ update manifest.
 - [ ] Upload `Scrivora-0.4.1-preview-unnotarized.dmg` and `SHA256SUMS.txt` to
       the GitHub release.
 - [ ] Confirm the README, release page, and GitHub release body include:
-      manual download, Homebrew `--no-quarantine`, SHA-256 check, and the
+      manual download, Homebrew tap/trust/install, SHA-256 check, and the
       per-app quarantine removal command. Do not include global Gatekeeper
       disable instructions.
 - [ ] Confirm the DMG mounts, contains `Scrivora.app` plus the Applications

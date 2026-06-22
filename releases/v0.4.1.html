@@ -370,7 +370,7 @@
 
       <aside class="release-card" aria-label="Release channel">
         <strong>Release channel</strong>
-        <p>Free OSS preview. Install with the DMG, or use Homebrew with no quarantine. Apple notarization is a later paid signing track.</p>
+        <p>Free OSS preview. Install with the DMG, or use the Homebrew cask after trusting the tap. Apple notarization is a later paid signing track.</p>
       </aside>
     </section>
 
@@ -388,7 +388,7 @@
           <strong>macOS</strong>
           <div>
             <h3>If macOS says the app is damaged.</h3>
-            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. Homebrew users can install with <code>brew install --cask --no-quarantine scrivora</code>. Do not disable Gatekeeper globally.</p>
+            <p>Run <code>sudo xattr -rd com.apple.quarantine "/Applications/Scrivora.app"</code>, then open Scrivora again. Homebrew users should run <code>brew trust rebel0789/scrivora</code> before <code>brew install --cask scrivora</code>. Do not disable Gatekeeper globally.</p>
           </div>
         </article>
         <article class="note-item">

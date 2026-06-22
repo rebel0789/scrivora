@@ -41,22 +41,23 @@ Compare the result with `SHA256SUMS.txt` on the GitHub release.
 ### Option B: Homebrew
 
 Homebrew is optional. It is the cleanest free install path when macOS is strict
-about unnotarized apps.
+about unnotarized apps. Homebrew requires explicit trust for third-party casks.
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask --no-quarantine scrivora
+brew trust rebel0789/scrivora
+brew install --cask scrivora
 ```
 
 If Homebrew says the app already exists:
 
 ```bash
 rm -rf "/Applications/Scrivora.app"
-brew install --cask --no-quarantine scrivora
+brew install --cask scrivora
 ```
 
-The `--no-quarantine` flag prevents Homebrew from adding quarantine to Scrivora.
-It does not disable Gatekeeper globally.
+The cask removes quarantine from `Scrivora.app` only. It does not disable
+Gatekeeper globally.
 
 ### macOS Says "App Is Damaged"
 

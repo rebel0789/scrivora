@@ -11,18 +11,20 @@ No account. No card. Core dictation does not use a cloud speech API.
 
 ## Homebrew
 
-Homebrew can install the free preview without adding quarantine:
+Homebrew can install the free preview and remove quarantine from Scrivora only.
+Homebrew requires explicit trust for third-party casks:
 
 ```bash
 brew tap rebel0789/scrivora https://github.com/rebel0789/scrivora
-brew install --cask --no-quarantine scrivora
+brew trust rebel0789/scrivora
+brew install --cask scrivora
 ```
 
 If Homebrew says the app already exists:
 
 ```bash
 rm -rf "/Applications/Scrivora.app"
-brew install --cask --no-quarantine scrivora
+brew install --cask scrivora
 ```
 
 ## What changed
